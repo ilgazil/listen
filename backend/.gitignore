@@ -1,0 +1,35 @@
+
+###> symfony/framework-bundle ###
+/.env.local.php
+/.env.*.local
+/.env.dev
+/.env.prod
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
+
+###> phpunit/phpunit ###
+/phpunit.xml
+.phpunit.result.cache
+###< phpunit/phpunit ###
+
+###> symfony/phpunit-bridge ###
+.phpunit.result.cache
+/phpunit.xml
+###< symfony/phpunit-bridge ###
+
+###> symfony/asset-mapper ###
+/public/assets/
+/assets/vendor/
+###< symfony/asset-mapper ###
+
+# Fichiers uploadés (créés à la volée, pas de stockage durable)
+/public/uploads/
+
+# Cache des scrapers (un JSON par jour, artefact runtime)
+/public/cache/
+
+# Échantillon HTML de recherche Audible (trop volumineux pour le repo)
+/tests/Fixtures/*.html

@@ -1,0 +1,21 @@
+parameters:
+    upload_directory: '%kernel.cache_dir%/test_uploads'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    # Public in test so the TestContainer::set() override actually applies
+    # (private services are inlined into the controller factory).
+    App\Service\Api\UnFichierApi:
+        public: true
+
+    App\Service\Notification\Discord\DiscordWebhook:
+        public: true
+
+    App\Service\Scraping\Lizzie\LizzieScraper:
+        public: true
+
+    App\Service\Scraping\Audible\AudibleScraper:
+        public: true

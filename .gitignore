@@ -1,0 +1,11 @@
+.env.local
+/.env.*.local
+*.local
+
+# Accès de déploiement (jamais committés)
+/.deploy.env
+
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea

@@ -1,0 +1,38 @@
+# Ce fichier est le point d'entrée pour configurer vos services.
+# Les fichiers du sous-répertoire packages/ configurent vos dépendances.
+
+# Placez ici les paramètres qui ne changent pas d'une machine à l'autre où l'app est déployée
+# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
+parameters:
+    upload_directory: '%kernel.project_dir%/public/uploads/files'
+    lizzie_cache: '%kernel.project_dir%/public/cache/lizzie'
+
+services:
+    # configuration par défaut des services de *ce* fichier
+    _defaults:
+        autowire: true      # Injecte automatiquement les dépendances dans vos services.
+        autoconfigure: true # Enregistre automatiquement vos services comme commandes, abonnés aux événements, etc.
+
+    # rend les classes de src/ utilisables comme services
+    # crée un service par classe dont l'id est le nom de classe complet
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+
+    # ajoutez d'autres définitions de services quand une configuration explicite est nécessaire
+    # notez que les dernières définitions *remplacent* toujours les précédentes
+
+    App\Controller\:
+        resource: '../src/Controller'
+        tags: [ 'controller.service_arguments' ]
+
+    App\Service\Uploading\LocalFileUploader:
+        arguments:
+            $targetDirectory: '%upload_directory%'
+
+    App\Service\Scraping\Lizzie\LizzieCache:
+        arguments:
+            $cacheDirectory: '%lizzie_cache%'
