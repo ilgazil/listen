@@ -44,6 +44,8 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
   Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
   `workMatches` dans `entities/book.ts`) sur : titre, nom de saga, auteur ou narrateur — **insensible
   à la casse et aux accents**, tous les mots du terme doivent matcher (`Aucun résultat` si vide).
+  Recherche et mode sont **persistés dans l'URL** (`/?q=…&mode=books`, écriture en `router.replace` pour ne pas
+  polluer l'historique — cf. § 3.8) : retour, liens et rechargement les restaurent.
   - Mode **Sagas** : une vignette `SagaTile` par saga de **2+ livres** — titre en `<h2>` comme les cartes livre,
     layout `book-core` : **carré 2×2 de couvertures** dans la colonne gauche (à l'emplacement de la couverture,
     4e case = couverture du 4e livre estompée + « +N » si plus de 4 livres),
@@ -57,7 +59,8 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
   - Mode **Livres** : grille de toutes les cartes `BookLarge` (tri alphabétique titre) ; actions par carte :
     « Télécharger » (`LinkDownload`) et lien source Audible/Lizzie (`LinkScrapper`).
   - Cliquer sur une vignette saga → page dédiée **`/saga/:id`** (id local dérivé du nom de saga) : `SagaView`
-    liste les livres de la saga **triés par tome** (`bookStore.sagaById` + `bookStore.fromSaga`).
+    liste les livres de la saga **triés par tome** (`bookStore.sagaById` + `bookStore.fromSaga`). Le
+    « ← Retour » du header revient dans l'historique (`historyStore.backOrHome()` — cf. § 3.8).
 - **`/add` (FormView)** :
   1. `DropBox` : drag & drop ou clic → le **nom du fichier pré-remplit la recherche**, extension et déterminants (le, a, etc.) retirés.
      Le fichier doit porter l'extension `.zip` (`accept=".zip"` + contrôle client) — sinon message
@@ -180,6 +183,32 @@ liste sous forme de `Book JSON` (voir § 4).
 - **« Supprimer »** → `window.confirm` → `deleteIntruder(id)` (`DELETE /api/intruders/{id}`) → la liste est
   rafraîchie. La suppression ne touche **pas** 1Fichier (le fichier n'existe pas) : elle retire l'entrée en base.
 - **Pas de formulaire de récupération** : aucun fichier à « récupérer » (décision, cf. `backend/SPECS.md` § 6).
+
+---
+
+### 3.8 Historique de navigation
+
+L'app dispose d'un **historique de navigation** (store `stores/history.ts`) pour ne plus perdre l'état en
+revenant en arrière (ex. recherche → saga → retour). Pas de bouton « Suivant » : un seul **« ← Retour »**.
+
+- **« ← Retour » dans le header** (`App.vue`, donc visible sur toutes les routes **sauf l'accueil**, qui est la
+  racine) : `historyStore.backOrHome()` — retour à la page précédente (état restauré), accueil en accès direct
+  (pas d'historique). Remplace l'ancien lien « Retour » de la page saga (servait aussi les pages `/orphans` et
+  `/intruders`, qui n'en avaient pas).
+- **Position dans la pile** : vue-router tient la position dans `history.state.position` ; le store mémorise la
+  **borne minimale visitée** (`min`) et en déduit `canBack`. `track()` est câblé sur `router.afterEach`
+  (dans `main.ts`). La borne est **persistée en sessionStorage** (par onglet) pour survivre au rechargement.
+- **État des pages dans l'URL** : HomeView persiste la recherche (`q`) et le mode (`mode=books`) dans la query —
+  écriture en **`router.replace`** (la saisie ne crée pas d'entrées d'historique), relecture sur `route.query`
+  (retour, liens). La recherche survit donc à navigation → saga → retour.
+- **Formulaire** (`/add`, `/edit/:id`) :
+  - « Annuler » (édition) et la sauvegarde réussie reviennent **d'où on venait** (`backOrHome()`), au lieu de
+    toujours pousser l'accueil ;
+  - le fichier déposé ne peut pas survivre à la navigation : quitter `/add` avec un fichier en attente déclenche
+    une **confirmation** (`onBeforeRouteLeave`) ;
+  - en création, « Enregistrer » met en file et **reste sur le formulaire** (inchangé — pas de navigation).
+- **Limites** : la position de scroll n'est pas restaurée (conteneurs de scroll custom) ; l'état du formulaire
+  n'est pas dans l'URL (le `File` n'est pas sérialisable).
 
 ---
 

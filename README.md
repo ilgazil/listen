@@ -15,6 +15,8 @@ entièrement en français.
 ## Fonctionnalités
 
 - **Bibliothèque** : vues « Sagas / Livres », regroupement par saga, recherche insensible à la casse et aux accents.
+- **Historique de navigation** : bouton « Retour » global, recherche et mode de l'accueil conservés dans l'URL —
+  le retour restaure l'état.
 - **Ajout d'un livre** : dépôt du ZIP → recherche de métadonnées (Audible + Lizzie fusionnées) → édition → preview → envoi.
 - **File d'attente** : envois séquentiels en arrière-plan, indépendants de la navigation — progression par item,
   pause/reprendre, réessai, réordonnancement.

@@ -85,7 +85,7 @@ src/
 ├── components/     # BookLarge/BookCard, DropBox, Form*, Link*, Section*, queue/FormQueue, icons/
 ├── entities/       # Book, Saga (classes) + type guard isSagaBook
 ├── router/         # routes "/" (HomeView), "/add" (FormView), "/edit/:id", "/saga/:id", "/orphans" (OrphansView), "/intruders" (IntrudersView)
-├── stores/         # Pinia: book.ts (bibliothèque), queue.ts (file d'envoi)
+├── stores/         # Pinia: book.ts (bibliothèque), queue.ts (file d'envoi), history.ts (historique de navigation)
 └── views/          # HomeView, FormView, SagaView, OrphansView, IntrudersView
 ```
 
@@ -156,3 +156,8 @@ La base de toutes les requêtes API est `API_BASE_URL` (`src/api/config.ts`), al
 - Les routes `/api/upload` et `/api/download/{id}` sont **câblées** : envoi et
   bouton « Télécharger » fonctionnent bout-en-bout (suite PHPUnit verte côté backend).
 - `FormSagaSelect.vue` : sélecteur de saga avec dropdown (positionnement par `getBoundingClientRect`).
+- **Historique de navigation** (`stores/history.ts`, bouton « ← Retour » dans le header `App.vue`, cf. `SPECS.md`
+  § 3.8) : la recherche et le mode de l'accueil sont persistés dans l'URL (`?q=…&mode=books`, `router.replace`),
+  le « ← Retour » (masqué sur l'accueil) et l'annulation/sauvegarde du formulaire passent par `backOrHome()`, et
+  quitter `/add` avec un fichier en attente demande confirmation. Position dans la pile déduite de
+  `history.state.position` (borne `min` persistée en sessionStorage, suivi sur `router.afterEach` dans `main.ts`).

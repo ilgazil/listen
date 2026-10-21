@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave } from 'vue-router'
 import { updateBook, fetchBooks } from '@/api/book.ts'
 import { Book } from '@/entities/book.ts'
 import { useQueueStore } from '@/stores/queue.ts'
 import { useBookStore } from '@/stores/book.ts'
+import { useHistoryStore } from '@/stores/history.ts'
 import BookForm from '@/components/BookForm.vue'
 import DropBox from '@/components/DropBox.vue'
 
@@ -12,8 +13,8 @@ const props = defineProps({
   id: String,
 })
 
-const router = useRouter()
 const bookStore = useBookStore()
+const historyStore = useHistoryStore()
 
 const isEditing = computed(() => !!props.id)
 const editingBook = computed(() => bookStore.books.find((book) => book.id === props.id))
@@ -41,6 +42,13 @@ function setFile(newFile: File) {
   error.value = ''
 }
 
+// Le fichier déposé ne survit pas à la navigation : on prévient avant de quitter le formulaire.
+onBeforeRouteLeave(() => {
+  if (file.value) {
+    return window.confirm('Un fichier est en attente d’envoi. Quitter le formulaire ?')
+  }
+})
+
 function submit(book: Book) {
   if (isEditing.value) {
     void saveEdit(book)
@@ -61,7 +69,8 @@ async function saveEdit(book: Book) {
   try {
     await updateBook(props.id!, book)
     bookStore.$patch({ books: await fetchBooks() })
-    router.push({ name: 'home' })
+    // Retour d'où on venait (saga, bibliothèque…), accueil en accès direct.
+    historyStore.backOrHome()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'La modification a échoué.'
   }
@@ -69,7 +78,7 @@ async function saveEdit(book: Book) {
 
 function cancel() {
   if (isEditing.value) {
-    router.push({ name: 'home' })
+    historyStore.backOrHome()
   } else {
     reset()
   }

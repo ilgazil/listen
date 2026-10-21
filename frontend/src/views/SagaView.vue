@@ -16,8 +16,6 @@ const books = computed(() => (saga.value ? bookStore.fromSaga(saga.value) : []))
 <template>
   <div class="saga-view">
     <div class="head">
-      <RouterLink to="/" class="neon back">← Retour</RouterLink>
-
       <h1 v-if="saga" class="title">{{ saga.name }}</h1>
     </div>
 
@@ -50,10 +48,6 @@ const books = computed(() => (saga.value ? bookStore.fromSaga(saga.value) : []))
   align-items: center;
   gap: 0.25rem;
   padding: 1rem 1rem 0;
-
-  .back {
-    align-self: flex-start;
-  }
 
   .title {
     color: var(--color-amber);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BookLarge from '@/components/BookLarge.vue'
 import SagaTile from '@/components/SagaTile.vue'
 import { useBookStore } from '@/stores/book.ts'
@@ -8,10 +9,59 @@ import IconDownload from '@/components/icons/IconDownload.vue'
 import LinkDownload from '@/components/LinkDownload.vue'
 import LinkScrapper from '@/components/LinkScrapper.vue'
 
+const route = useRoute()
+const router = useRouter()
 const bookStore = useBookStore()
 
-const mode = ref<'sagas' | 'books'>('sagas')
-const query = ref('')
+// Normalise une valeur de query string (string | string[] | null → string).
+function normalize(value: unknown): string {
+  const entry = Array.isArray(value) ? value[0] : value
+
+  return typeof entry === 'string' ? entry : ''
+}
+
+// Recherche et mode vivent dans l'URL : retour, liens et rechargement les restaurent.
+const mode = ref<'sagas' | 'books'>(normalize(route.query.mode) === 'books' ? 'books' : 'sagas')
+const query = ref(normalize(route.query.q))
+
+// État local → URL (replace : la saisie ne pollue pas l'historique).
+watch([query, mode], ([nextQuery, nextMode]) => {
+  const next: { q?: string; mode?: string } = {}
+
+  if (nextQuery) {
+    next.q = nextQuery
+  }
+
+  if (nextMode === 'books') {
+    next.mode = nextMode
+  }
+
+  if (
+    normalize(route.query.q) === (next.q ?? '') &&
+    normalize(route.query.mode) === (next.mode ?? '')
+  ) {
+    return
+  }
+
+  void router.replace({ query: next })
+})
+
+// URL → état local (boutons Précédent / Suivant, liens).
+watch(
+  () => route.query,
+  (value) => {
+    const q = normalize(value.q)
+    const m = normalize(value.mode) === 'books' ? 'books' : 'sagas'
+
+    if (q !== query.value) {
+      query.value = q
+    }
+
+    if (m !== mode.value) {
+      mode.value = m
+    }
+  },
+)
 
 const filteredWorks = computed(() =>
   bookStore.works.filter((work) => workMatches(work, query.value)),

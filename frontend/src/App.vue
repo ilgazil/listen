@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 import { fetchBooks } from '@/api/book.ts'
 import { useBookStore } from '@/stores/book.ts'
 import { useQueueStore } from '@/stores/queue.ts'
+import { useHistoryStore } from '@/stores/history.ts'
 import FormQueue from '@/components/queue/FormQueue.vue'
 
+const route = useRoute()
 const queueStore = useQueueStore()
+const historyStore = useHistoryStore()
 
 onMounted(async () => {
   useBookStore().$patch({ books: await fetchBooks() })
@@ -15,6 +18,16 @@ onMounted(async () => {
 
 <template>
   <header>
+    <!-- Retour dans l'historique (état restauré), accueil en accès direct. Masqué sur l'accueil, qui est la racine. -->
+    <button
+      v-if="route.path !== '/'"
+      type="button"
+      class="neon back"
+      @click="historyStore.backOrHome()"
+    >
+      ← Retour
+    </button>
+
     <RouterLink to="/" class="neon">Hello my friend, stay awhile and listen.</RouterLink>
   </header>
 
@@ -44,6 +57,14 @@ header {
 
   + * {
     flex-grow: 1;
+  }
+
+  .back {
+    margin-right: auto;
+    font: inherit;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
   }
 }
 
