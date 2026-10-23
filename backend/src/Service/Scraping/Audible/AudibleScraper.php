@@ -27,6 +27,13 @@ class AudibleScraper implements ScraperInterface
     protected const MAX_SERIES_ATTEMPTS = 3;
     protected const SERIES_RETRY_DELAY = 1;
 
+    /** Idem pour la page de recherche (une 503 transitoire ne doit pas vider les résultats). */
+    protected const MAX_SEARCH_ATTEMPTS = 2;
+    protected const SEARCH_RETRY_DELAY = 1;
+
+    /** Une vraie page Audible fait ~1 Mo ; la page d'erreur 503, ~2 Ko. */
+    protected const MIN_REAL_PAGE_BYTES = 10000;
+
     protected string $endpoint = 'https://www.audible.fr/';
 
     protected array $baseUrlQuery = [
@@ -40,17 +47,40 @@ class AudibleScraper implements ScraperInterface
 
     public function search(string $pattern): array
     {
-        // Normalisation partagée (accents, ponctuation, casse) — le pattern n'est plus
-        // pré-encodé : buildUrl s'en charge (l'ancien double-encodage produisait %2B).
-        $url = (new \anlutro\cURL\cURL())->buildUrl(
-            $this->endpoint . 'search',
-            ['keywords' => SearchRanker::normalize($pattern)] + $this->baseUrlQuery,
-        );
+        $pattern = SearchRanker::normalize($pattern);
+        $words = SearchRanker::words($pattern);
 
-        $parser = new AudibleSearchParser($this->fetch($url));
-        $books = $parser->getBooks();
+        // La recherche Audible est un ET strict sur tous les mots : un blob
+        // « auteur saga titre » (terme dérivé d'un nom de fichier) ne renvoie rien.
+        // On relâche progressivement : sans le premier mot (l'auteur), puis sur la
+        // queue du titre (2 derniers mots).
+        $variants = [$pattern];
 
-        return $this->withSeriesBooks(SearchRanker::normalize($pattern), $books, $parser);
+        if (count($words) > 2) {
+            $variants[] = implode(' ', array_slice($words, 1));
+
+            $tail = implode(' ', array_slice($words, -2));
+
+            if (!in_array($tail, $variants, true)) {
+                $variants[] = $tail;
+            }
+        }
+
+        foreach ($variants as $variant) {
+            $url = (new \anlutro\cURL\cURL())->buildUrl(
+                $this->endpoint . 'search',
+                ['keywords' => $variant] + $this->baseUrlQuery,
+            );
+
+            $parser = new AudibleSearchParser($this->fetchWithRetry($url, self::MAX_SEARCH_ATTEMPTS, self::SEARCH_RETRY_DELAY));
+            $books = $parser->getBooks();
+
+            if ($books) {
+                return $this->withSeriesBooks($pattern, $books, $parser);
+            }
+        }
+
+        return [];
     }
 
     /**
@@ -114,27 +144,44 @@ class AudibleScraper implements ScraperInterface
             return $cached;
         }
 
+        $html = $this->fetchWithRetry(
+            $this->endpoint . ltrim($seriesPath, '/'),
+            self::MAX_SERIES_ATTEMPTS,
+            self::SERIES_RETRY_DELAY,
+        );
+
+        // La page obtenue est mise en cache ; une page d'erreur (503 épuisée) ne
+        // l'est pas — la prochaine recherche retentera.
+        if (str_contains($html, 'productListItem')) {
+            $this->seriesCache->set($seriesId, $html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * GET avec retries : Audible sert parfois sa page d'erreur 503 (anti
+     * rate-limiting) **sans status HTTP d'échec côté cURL**. On la reconnaît à sa
+     * taille (une vraie page, même sans résultat, fait ~1 Mo).
+     */
+    protected function fetchWithRetry(string $url, int $maxAttempts, int $delay): string
+    {
         for ($attempt = 1; ; $attempt++) {
-            $html = $this->fetch($this->endpoint . ltrim($seriesPath, '/'));
+            $html = $this->fetch($url);
 
-            if (str_contains($html, 'productListItem')) {
-                $this->seriesCache->set($seriesId, $html);
-
+            if (strlen($html) > self::MIN_REAL_PAGE_BYTES || $attempt >= $maxAttempts) {
                 return $html;
             }
 
-            if ($attempt >= self::MAX_SERIES_ATTEMPTS) {
-                // Échec : le parseur n'en tirera rien, l'appelant retombe sur la recherche.
-                return $html;
-            }
-
-            sleep(self::SERIES_RETRY_DELAY);
+            sleep($delay);
         }
     }
 
     /**
-     * Pages série des sagas dont le nom matche la recherche (tous les mots du pattern
-     * dans le nom de saga — score ≥ MIN_SERIES_SCORE), les meilleures d'abord.
+     * Pages série des sagas dont le nom matche la recherche, dans les deux sens :
+     * tous les mots du pattern dans le nom de la saga (« bourbon kid » → « Bourbon
+     * Kid »), ou le nom de la saga contenu dans la recherche (« anonyme bourbon kid
+     * cimetière du diable » → « Bourbon Kid »). Les meilleures d'abord.
      *
      * @param array<string, string> $seriesUrls nom de saga → chemin de la page série
      * @return array<string> chemins des pages série à scraper
@@ -144,7 +191,10 @@ class AudibleScraper implements ScraperInterface
         $scores = [];
 
         foreach ($seriesUrls as $saga => $seriesUrl) {
-            $score = SearchRanker::score($pattern, $saga);
+            $score = max(
+                SearchRanker::score($pattern, $saga),
+                SearchRanker::score($saga, $pattern),
+            );
 
             if ($score >= self::MIN_SERIES_SCORE) {
                 $scores[$saga] = $score;

@@ -163,14 +163,18 @@ src/
   `AudibleBookParser`). Extrait : id, cover, title, saga/tome (`computeSagaMetadata()`), author, narrators, runtime, ratings.
   Le parsing est fragile par nature (dépend du markup Audible). Titre/ASIN extraits de l'`aria-label` /
   `product-list-item-` du bloc (le rendu `<h3>` varie selon les fiches).
-  **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche** (score ≥ `MIN_SERIES_SCORE`,
-  tous les mots du pattern dans le nom) a un lien « Série : … » dans les résultats, sa page série est scrapée
-  (elle liste la saga complète — même si un seul livre de la saga est dans les résultats) et fusionnée par ASIN —
-  filtrage narrateur désactivé pour ces pages (`getBooks(false)`), max 2 pages par recherche
-  (`MAX_SERIES_ENRICHMENTS`). Page série demandée avec **retries** (Audible renvoie souvent une 503 anti
-  rate-limiting, sans status HTTP d'échec côté cURL : on détecte l'absence de `productListItem`) et
-  **cache quotidien** (`AudibleSeriesCache`, dossier `public/cache/audible`). Échec = résultats de la
-  recherche seule.
+  **Relaxation** : la recherche Audible est un ET strict sur tous les mots — si le pattern (3+ mots) donne 0
+  résultat, on réessaie sans le premier mot (auteur en tête des noms de fichiers), puis sur la queue du titre
+  (2 derniers mots). Page de recherche avec retries 503 (`MAX_SEARCH_ATTEMPTS`), détection de la page d'erreur à
+  sa taille (`MIN_REAL_PAGE_BYTES`).
+  **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche dans un des deux sens** (score
+  ≥ `MIN_SERIES_SCORE` : tous les mots du pattern dans le nom, ou le nom de la saga contenu dans la recherche)
+  a un lien « Série : … » dans les résultats, sa page série est scrapée (elle liste la saga complète — même si un
+  seul livre de la saga est dans les résultats) et fusionnée par ASIN — filtrage narrateur désactivé pour ces
+  pages (`getBooks(false)`), max 2 pages par recherche (`MAX_SERIES_ENRICHMENTS`). Page série demandée avec
+  **retries** (Audible renvoie souvent une 503 anti rate-limiting, sans status HTTP d'échec côté cURL : on
+  détecte la page d'erreur à sa taille) et **cache quotidien** (`AudibleSeriesCache`, dossier
+  `public/cache/audible`). Échec = résultats de la recherche seule.
 - **Lizzie** (`LizzieScraper`) : utilise `LizzieCache` — un JSON du catalogue (`lizzie-api.staytuned.io/v1/catalog`)
   mis en cache **une fois par jour** dans `public/cache/lizzie/cache_YYYY-MM-DD.json`. Extrait : title, author, cover,
   runtime, narrators (un seul champ). Pas de ratings ni saga/tome.

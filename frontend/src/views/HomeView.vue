@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BookLarge from '@/components/BookLarge.vue'
 import SagaTile from '@/components/SagaTile.vue'
 import { useBookStore } from '@/stores/book.ts'
+import { useQueueStore } from '@/stores/queue.ts'
 import { bookMatches, workMatches } from '@/entities/book.ts'
 import IconDownload from '@/components/icons/IconDownload.vue'
 import LinkDownload from '@/components/LinkDownload.vue'
@@ -12,6 +13,7 @@ import LinkScrapper from '@/components/LinkScrapper.vue'
 const route = useRoute()
 const router = useRouter()
 const bookStore = useBookStore()
+const queueStore = useQueueStore()
 
 // Normalise une valeur de query string (string | string[] | null → string).
 function normalize(value: unknown): string {
@@ -134,7 +136,9 @@ const filteredBooks = computed(() =>
     </main>
   </div>
 
-  <RouterLink to="/add" class="neon add">
+  <!-- Masqué quand la file d'envoi est visible : le bouton flottant passerait par
+       dessus le panneau, qui propose alors « Ajouter » dans sa barre d'actions. -->
+  <RouterLink v-if="!queueStore.uploads.length" to="/add" class="neon add">
     <IconDownload />
   </RouterLink>
 </template>

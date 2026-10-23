@@ -40,8 +40,9 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
 
 ### 3.1 Parcours utilisateur
 
-- **`/` (HomeView)** : toggle « Sagas / Livres », **mode Sagas par défaut**. Bouton flottant `+` → `/add`.
-  Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
+- **`/` (HomeView)** : toggle « Sagas / Livres », **mode Sagas par défaut**. Bouton flottant `+` → `/add`
+  (**masqué quand la file d'envoi est visible** — il passerait par dessus le panneau ; le panneau propose alors
+  un bouton « Ajouter » dans sa barre d'actions, cf. § 3.4). Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
   `workMatches` dans `entities/book.ts`) sur : titre, nom de saga, auteur ou narrateur — **insensible
   à la casse et aux accents**, tous les mots du terme doivent matcher (`Aucun résultat` si vide).
   Recherche et mode sont **persistés dans l'URL** (`/?q=…&mode=books`, écriture en `router.replace` pour ne pas
@@ -134,6 +135,12 @@ Champs du formulaire (`FormView`) :
   `transferring`) : **le transfert serveur (1Fichier, réécriture Book, notif Discord) se poursuit en parallèle** de
   l'upload de l'item suivant. En fin de traitement, les items relancés en `pending` pendant la file **restent en
   attente** (relancer « Envoyer » pour les traiter). Un `paused` n'est jamais traité tant qu'il n'est pas repris.
+- **Barre d'actions** : bouton **« Ajouter »** (lien vers `/add`, même rôle que le bouton flottant « + » de la
+  bibliothèque — qui est masqué tant que le panneau est visible pour ne pas le recouvrir ; masqué aussi sur `/add`
+  même), puis « Pause » (file) et « Envoyer ». Quand **toute la file est terminée** (getter `finished` : tous les
+  items `ended`/`error`, aucun actif ni brouillon — ni « Pause » ni « Envoyer » ne sont alors visibles), un bouton
+  **« Vider la file »** apparaît : confirmation (`window.confirm`) puis `queueStore.clear()` (refusé côté store tant
+  que la file n'est pas terminée).
 - **« Envoyer » envoie réellement** : chaque item passe en `running` puis `transferring` puis `ended`/`error` via
   `uploadBook()` (XHR, `POST /api/upload`), la bibliothèque est rafraîchie après chaque succès.
 - **Pause / Reprendre (bouton par item)** : bouton dispo tant que l'item est `draft`, `pending` ou `running` — il

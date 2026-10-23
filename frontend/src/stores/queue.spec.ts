@@ -373,4 +373,35 @@ describe('queue store', () => {
     expect(queue.uploads[1].state).toBe('error')
     expect(queue.uploads[2].state).toBe('transferring')
   })
+
+  it('finished est vrai seulement quand tous les items sont terminés ou en erreur', () => {
+    const queue = useQueueStore()
+
+    expect(queue.finished).toBe(false)
+
+    queue.enqueue(makeDraft().book, makeDraft().file)
+    expect(queue.finished).toBe(false)
+
+    queue.setState(queue.uploads[0], 'ended')
+    expect(queue.finished).toBe(true)
+
+    queue.enqueue(makeDraft('Second').book, makeDraft('Second').file)
+    expect(queue.finished).toBe(false)
+
+    queue.setState(queue.uploads[1], 'error')
+    expect(queue.finished).toBe(true)
+  })
+
+  it('clear vide la file terminée et refuse tant que la file n’est pas terminée', () => {
+    const queue = useQueueStore()
+    queue.enqueue(makeDraft().book, makeDraft().file)
+
+    // Brouillon : la file n'est pas terminée, la vidange est refusée.
+    queue.clear()
+    expect(queue.uploads).toHaveLength(1)
+
+    queue.setState(queue.uploads[0], 'ended')
+    queue.clear()
+    expect(queue.uploads).toHaveLength(0)
+  })
 })

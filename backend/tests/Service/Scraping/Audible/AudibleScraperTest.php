@@ -146,7 +146,7 @@ class AudibleScraperTest extends TestCase
             self::markTestSkipped('fixtures audible-bourbon-search.html / audible-series.html non présentes (gitignorées).');
         }
 
-        // Audible renvoie parfois sa page d'erreur (503, sans produit) sans faire
+        // Audible renvoie parfois sa page d'erreur (503, ~2 Ko) sans faire
         // échouer le transfert : on retente jusqu'à obtenir la page série.
         $errorPage = '<html><body>Service Unavailable</body></html>';
         $calls = 0;
@@ -164,6 +164,67 @@ class AudibleScraperTest extends TestCase
         $books = $scraper->search('bourbon kid');
 
         self::assertContains('8', array_map(fn($book) => $book->getTome(), $books));
+    }
+
+    public function testSearchRelaxesPatternWhenStrictSearchFindsNothing(): void
+    {
+        if (!is_file(self::SEARCH_FIXTURE) || !is_file(self::SERIES_FIXTURE)) {
+            self::markTestSkipped('fixtures audible-bourbon-search.html / audible-series.html non présentes (gitignorées).');
+        }
+
+        // Recherche Audible = ET strict : un blob « auteur saga titre » (« anonyme
+        // bourbon kid cimetiere diable ») ne renvoie rien. On relâche : sans le
+        // premier mot, puis la queue du titre (« cimetiere diable »).
+        $keywordsSeen = [];
+
+        $scraper = $this->scraper(function (string $url) use (&$keywordsSeen): string {
+            // Page série (pas de keywords dans l'URL) → fixture série.
+            if (str_contains($url, '/series/')) {
+                return (string) file_get_contents(self::SERIES_FIXTURE);
+            }
+
+            parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+            $keywords = (string) ($query['keywords'] ?? '');
+            $keywordsSeen[] = $keywords;
+
+            // Page « vide » légitime : grande, sans produit (pas une 503).
+            $empty = '<html><body>' . str_repeat('x', 20000) . '</body></html>';
+
+            return str_word_count(str_replace('_', ' ', $keywords)) > 2 ? $empty : (string) file_get_contents(self::SEARCH_FIXTURE);
+        });
+
+        $books = $scraper->search('anonyme bourbon kid cimetiere diable');
+
+        // La queue du titre a été essayée en dernier recours…
+        self::assertContains('cimetiere diable', $keywordsSeen);
+        // … et l'enrichissement série a complété la saga.
+        self::assertContains('8', array_map(fn($book) => $book->getTome(), $books));
+    }
+
+    public function testSeriesEnrichmentTriggersWhenPatternContainsSagaName(): void
+    {
+        if (!is_file(self::SEARCH_FIXTURE) || !is_file(self::SERIES_FIXTURE)) {
+            self::markTestSkipped('fixtures audible-bourbon-search.html / audible-series.html non présentes (gitignorées).');
+        }
+
+        // Un seul livre de la saga dans les résultats, pattern = blob contenant le nom
+        // de la saga : l'enrichissement doit quand même se déclencher (match inversé).
+        preg_match_all('/productListItem.+bc-spacing-top-base.+<\/li/msU', (string) file_get_contents(self::SEARCH_FIXTURE), $blocks);
+        $singleBookPage = $blocks[0][0];
+
+        $scraper = $this->scraper(function (string $url) use ($singleBookPage): string {
+            return str_contains($url, '/series/')
+                ? (string) file_get_contents(self::SERIES_FIXTURE)
+                : $singleBookPage;
+        });
+
+        $books = $scraper->search('anonyme bourbon kid cimetiere diable');
+
+        $tomes = array_map(fn($book) => $book->getTome(), $books);
+
+        self::assertContains('7', $tomes);
+        self::assertContains('8', $tomes);
+        self::assertContains('11', $tomes);
     }
 
     public function testSeriesPageIsCachedForTheDay(): void

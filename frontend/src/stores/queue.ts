@@ -57,6 +57,13 @@ export const useQueueStore = defineStore('queue', {
     launchable(state) {
       return state.uploads.some(({ state }) => state === 'draft' || state === 'pending')
     },
+    /** File entièrement terminée (plus rien d'actif, d'attente ou de brouillon) : vidable. */
+    finished(state) {
+      return (
+        state.uploads.length > 0 &&
+        state.uploads.every(({ state: itemState }) => itemState === 'ended' || itemState === 'error')
+      )
+    },
   },
   actions: {
     enqueue(book: Book, file: File): void {
@@ -77,6 +84,15 @@ export const useQueueStore = defineStore('queue', {
       }
 
       this.uploads = this.uploads.filter((upload) => upload !== item)
+    },
+
+    /** Vide la file entièrement terminée (refusé tant qu'un item est actif ou en attente). */
+    clear(): void {
+      if (this.running || !this.finished) {
+        return
+      }
+
+      this.uploads = []
     },
 
     setState(item: QueueItem, state: State): void {

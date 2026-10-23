@@ -2,9 +2,19 @@
 import { statusLabel, useQueueStore } from '@/stores/queue'
 import BookCard from '@/components/BookCard.vue'
 import IconCloud from '@/components/icons/IconCloud.vue'
+import IconDownload from '@/components/icons/IconDownload.vue'
 import IconTrash from '@/components/icons/IconTrash.vue'
+import { useRoute } from 'vue-router'
 
 const queueStore = useQueueStore()
+const route = useRoute()
+
+// Confirmation : la vidange efface la file (items terminés, logs compris).
+function clearQueue(): void {
+  if (window.confirm("Vider la file d'envoi ?")) {
+    queueStore.clear()
+  }
+}
 </script>
 
 <template>
@@ -75,6 +85,14 @@ const queueStore = useQueueStore()
     </div>
 
     <div class="actions">
+      <!-- Le bouton flottant « + » de la bibliothèque est masqué quand le panneau est
+           visible (il passerait par dessus) : l'accès à /add vit ici. Masqué sur /add
+           même, où il serait redondant. -->
+      <RouterLink v-if="route.path !== '/add'" to="/add" class="add">
+        <IconDownload />
+        Ajouter
+      </RouterLink>
+
       <button
         v-if="
           queueStore.uploads.some(
@@ -96,6 +114,10 @@ const queueStore = useQueueStore()
       >
         Envoyer
       </button>
+
+      <!-- File entièrement terminée : proposer de la vider (aucun autre bouton
+           n'est alors visible — ni Pause ni Envoyer). -->
+      <button v-if="queueStore.finished" type="button" @click="clearQueue">Vider la file</button>
     </div>
   </div>
 </template>
@@ -172,7 +194,10 @@ const queueStore = useQueueStore()
     }
   }
 
-  button {
+  /* Les contrôles du panneau : <button> et le lien « Ajouter » (RouterLink) des
+     actions — mêmes apparences, même survol. */
+  button,
+  .actions a {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -183,6 +208,7 @@ const queueStore = useQueueStore()
     border-radius: 999px;
     color: var(--color-amber);
     cursor: pointer;
+    text-decoration: none;
     transition:
       background-color 0.3s,
       color 0.3s,
