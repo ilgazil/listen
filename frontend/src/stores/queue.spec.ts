@@ -117,7 +117,12 @@ describe('queue store', () => {
     expect(queue.uploads[0].log.at(-1)).toBe('Échec lors du stockage, admin averti.')
     expect(fetchBooks).not.toHaveBeenCalled()
     expect(reportUploadCut).toHaveBeenCalledTimes(1)
-    expect(reportUploadCut).toHaveBeenCalledWith(queue.uploads[0].book)
+
+    const [book, error] = vi.mocked(reportUploadCut).mock.calls[0]
+
+    expect(book).toBe(queue.uploads[0].book)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe('Upload to 1Fichier failed.')
   })
 
   it('pause place un item non lancé en pause quand la file est inactive', () => {

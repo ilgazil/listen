@@ -350,6 +350,32 @@ describe('reportUploadCut', () => {
     expect(init?.headers).toEqual({ 'Content-Type': 'application/json' })
     expect(JSON.parse(init?.body as string)).toMatchObject({
       title: 'Livre coupé en upload',
+      error: '',
+      source: '',
+    })
+  })
+
+  it('transmet le message et le fichier:ligne de l’erreur', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+
+    const { Book } = await import('@/entities/book.ts')
+    const book = new Book()
+    book.title = 'Livre coupé en upload'
+
+    const error = new Error("Échec de l'envoi (502)")
+
+    // Reconstitue une pile V8 : la 1re frame « at » est le site du déclenchement.
+    error.stack = `Error: Échec de l'envoi (502)
+    at uploadBook (http://localhost:5173/src/api/book.ts:186:17)
+    at attemptUpload (http://localhost:5173/src/stores/queue.ts:210:9)`
+
+    await reportUploadCut(book, error)
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({
+      error: "Échec de l'envoi (502)",
+      source: 'src/api/book.ts:186',
     })
   })
 

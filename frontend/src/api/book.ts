@@ -265,13 +265,37 @@ export async function updateBook(id: string, book: Book): Promise<Book> {
   return bookFromApi(data) || book
 }
 
+// Détails d'une erreur JS pour le rapport Discord : message + « fichier:ligne » de
+// la première frame de la pile (le site du déclenchement).
+function errorDetails(error: unknown): { error: string; source: string } {
+  if (!(error instanceof Error)) {
+    return { error: error === undefined || error === null ? '' : String(error), source: '' }
+  }
+
+  const frame = (error.stack ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('at '))
+
+  // « at uploadBook (http://hôte/src/api/book.ts:186:17) » → « src/api/book.ts:186 »
+  const match = frame?.match(/([^\s()]+):(\d+):\d+\)?\s*$/)
+
+  return {
+    error: error.message,
+    source: match ? `${match[1].replace(/^https?:\/\/[^/]+\//, '')}:${match[2]}` : '',
+  }
+}
+
 // Signale un envoi coupé : le backend poste un message Discord orienté vers les
-// fichiers orphelins pour corriger le livre au plus vite.
-export async function reportUploadCut(book: Book): Promise<void> {
+// fichiers orphelins pour corriger le livre au plus vite. L'erreur d'upload
+// (message + fichier:ligne) accompagne le signalement.
+export async function reportUploadCut(book: Book, error?: unknown): Promise<void> {
+  const details = errorDetails(error)
+
   const result = await fetch(`${API_BASE_URL}/api/report-upload-cut`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(bookPayload(book)),
+    body: JSON.stringify({ ...bookPayload(book), error: details.error, source: details.source }),
   })
 
   if (result.status !== 204) {

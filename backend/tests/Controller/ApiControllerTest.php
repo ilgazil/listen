@@ -825,9 +825,13 @@ class ApiControllerTest extends WebTestCase
         $notifier = $this->createMock(Notifier::class);
         $notifier->expects(self::once())
             ->method('uploadCut')
-            ->with(self::callback(function (Book $book) {
-                return $book->getTitle() === 'Livre Coupé' && $book->getSaga() === 'Une saga';
-            }));
+            ->with(
+                self::callback(function (Book $book) {
+                    return $book->getTitle() === 'Livre Coupé' && $book->getSaga() === 'Une saga';
+                }),
+                "Échec de l'envoi (502)",
+                'src/api/book.ts:186',
+            );
         $this->client->getContainer()->set(DiscordWebhook::class, $notifier);
 
         $this->client->request(
@@ -839,6 +843,8 @@ class ApiControllerTest extends WebTestCase
             json_encode([
                 'title' => 'Livre Coupé',
                 'saga' => 'Une saga',
+                'error' => "Échec de l'envoi (502)",
+                'source' => 'src/api/book.ts:186',
             ]),
         );
 

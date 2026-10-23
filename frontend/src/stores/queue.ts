@@ -220,7 +220,7 @@ export const useQueueStore = defineStore('queue', {
         item.log.push('Terminé.')
         useBookStore().$patch({ books: await fetchBooks() })
         onPhaseChange()
-      } catch {
+      } catch (err) {
         if (controller.signal.aborted) {
           onPhaseChange()
           return
@@ -229,7 +229,7 @@ export const useQueueStore = defineStore('queue', {
         item.state = 'ended'
         item.failed = true
         item.log.push('Échec lors du stockage, admin averti.')
-        void reportUploadCut(item.book)
+        void reportUploadCut(item.book, err)
         onPhaseChange()
       } finally {
         if (item.controller === controller) {

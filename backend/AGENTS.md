@@ -80,7 +80,7 @@ src/
     │   └── UnFichierApi.php         # upload + token de téléchargement 1Fichier
     ├── Notification/
     │   ├── Notifier.php             # interface
-    │   └── Discord/                 # webhook + message rich embed
+    │   └── Discord/                 # webhook + embeds (Messages/ : AvailableBook, Error, UploadCut)
     ├── Scraping/
     │   ├── ScraperInterface.php
     │   ├── ScrapperFactory.php      # choix du scraper selon $book->scraper
@@ -209,6 +209,12 @@ src/
   par le canal `app`. Les éventuels retours 502 sans log sont notifiés explicitement (`ApiController::download`).
 - `AvailableBookMessage` : embed rich « Nouveau livre disponible » (couleur `f59e0b`), champs Saga/Tome, Durée,
   Évaluation, image couverture, lien `{base_url}/api/download/{id}` (`DiscordWebhook::appUrl()`).
+- `Notifier::uploadCut(Book, error, source)` ; implémentation `DiscordWebhook::uploadCut` → `jsonPost` sur
+  `DISCORD_SENTRY_WEBHOOK` (**no-op si vide/absente**). Embed `UploadCutMessage` : vignette du livre (image
+  couverture, couleur rouge `e03131`), **titre lié à la fiche du scraper** quand `scrap_id` est défini
+  (`audible.fr/pd/Book/{id}` ou `lizzie.audio/content/{id}` — l'ancien lien `/orphans` a disparu), propriétés
+  **« Erreur »** (message de l'échec d'upload) et **« Source »** (`fichier:ligne` côté client, extraits de la pile
+  JS). `POST /api/report-upload-cut` accepte `error` et `source` (chaînes optionnelles) en plus du payload livre.
 - **Aucune URL de site en dur** : les liens des notifications sont construits depuis la **requête courante**
   (`RequestStack` → `BaseUrl::from($request->getSchemeAndHttpHost())`) et surchargés par `APP_BASE_URL` si définie.
 

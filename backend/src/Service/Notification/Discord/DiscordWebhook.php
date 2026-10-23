@@ -6,6 +6,7 @@ use anlutro\cURL\cURL;
 use App\Entity\Book;
 use App\Service\Notification\Discord\Messages\AvailableBookMessage;
 use App\Service\Notification\Discord\Messages\ErrorMessage;
+use App\Service\Notification\Discord\Messages\UploadCutMessage;
 use App\Service\Notification\Notifier;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Throwable;
@@ -38,10 +39,10 @@ class DiscordWebhook implements Notifier
     }
 
     /**
-     * Signale un envoi interrompu : même embed que le livre disponible, mais
-     * pointant vers la page des fichiers orphelins où corriger le livre.
+     * Signale un envoi interrompu : vignette du livre (titre lié à sa fiche scraper)
+     * et détails de l'erreur survenue (message + fichier:ligne côté client).
      */
-    public function uploadCut(Book $book): void
+    public function uploadCut(Book $book, string $error = '', string $source = ''): void
     {
         $webhook = $_ENV['DISCORD_SENTRY_WEBHOOK'] ?? '';
 
@@ -49,9 +50,7 @@ class DiscordWebhook implements Notifier
             return;
         }
 
-        $message = new AvailableBookMessage($book, $this->appUrl()?->path('/orphans'));
-
-        $this->post($webhook, $message->getContent());
+        $this->post($webhook, (new UploadCutMessage($book, $error, $source))->getContent());
     }
 
     /**

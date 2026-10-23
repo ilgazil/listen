@@ -32,12 +32,38 @@ class DiscordWebhookTest extends TestCase
         self::assertSame('https://listen.test/api/download/abc123', $webhook->lastContent['embeds'][0]['url']);
     }
 
-    public function testUploadCutBuildsOrphansUrlFromRequest(): void
+    public function testUploadCutLinksToScraperPageAndCarriesError(): void
+    {
+        $webhook = new RecordingWebhook(new RequestStack(), 'https://listen.test');
+
+        $book = $this->createBook('abc123');
+        $book->setScraper('audible')->setScrapId('B000XYZ');
+
+        $webhook->uploadCut($book, "Échec de l'envoi (502)", 'src/api/book.ts:186');
+
+        $embed = $webhook->lastContent['embeds'][0];
+
+        // Titre lié à la fiche du scraper.
+        self::assertSame('https://www.audible.fr/pd/Book/B000XYZ', $embed['url']);
+        self::assertSame('Livre', $embed['title']);
+        self::assertSame('e03131', dechex($embed['color']));
+
+        // Propriétés « Erreur » et « Source ».
+        self::assertSame('Erreur', $embed['fields'][0]['name']);
+        self::assertSame("Échec de l'envoi (502)", $embed['fields'][0]['value']);
+        self::assertSame('Source', $embed['fields'][1]['name']);
+        self::assertSame('src/api/book.ts:186', $embed['fields'][1]['value']);
+    }
+
+    public function testUploadCutWithoutScrapIdHasNoLinkAndNoErrorFields(): void
     {
         $webhook = new RecordingWebhook(new RequestStack(), 'https://listen.test');
         $webhook->uploadCut($this->createBook('abc123'));
 
-        self::assertSame('https://listen.test/orphans', $webhook->lastContent['embeds'][0]['url']);
+        $embed = $webhook->lastContent['embeds'][0];
+
+        self::assertArrayNotHasKey('url', $embed);
+        self::assertSame([], $embed['fields']);
     }
 
     public function testAppBaseUrlOverridesRequest(): void

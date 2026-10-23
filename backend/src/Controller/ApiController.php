@@ -346,7 +346,11 @@ class ApiController extends AbstractController
             return new JsonResponse(['error' => 'Le titre est requis.'], Response::HTTP_BAD_REQUEST);
         }
 
-        $this->notifier->uploadCut($book);
+        $this->notifier->uploadCut(
+            $book,
+            isset($data['error']) && is_string($data['error']) ? trim($data['error']) : '',
+            isset($data['source']) && is_string($data['source']) ? trim($data['source']) : '',
+        );
 
         return new Response('', Response::HTTP_NO_CONTENT);
     }

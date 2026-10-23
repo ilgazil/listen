@@ -11,5 +11,6 @@ interface Notifier
 
     public function error(Throwable $exception): void;
 
-    public function uploadCut(Book $book): void;
+    /** Signale un envoi interrompu, avec l'erreur survenue (message + fichier:ligne). */
+    public function uploadCut(Book $book, string $error = '', string $source = ''): void;
 }
