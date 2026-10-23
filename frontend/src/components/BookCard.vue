@@ -81,7 +81,11 @@ article {
     }
 
     .author {
-      display: block;
+      /* Flex restauré (le block du parent écraserait le flex de SectionAuthor) :
+         icône et nom centrés verticalement, ligne centrée dans la tuile. */
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: 100%;
       min-width: 0;
       font-size: 0.75rem;
