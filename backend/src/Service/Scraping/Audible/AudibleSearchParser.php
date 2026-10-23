@@ -19,9 +19,14 @@ class AudibleSearchParser
     public function getId(): string
     {
         if (!$this->has('id')) {
-            preg_match('/product-list-flyout-(.+)"/msU', $this->content, $matches);
+            // ASIN du bloc (pages recherche et série), sinon le flyout (pages de recherche).
+            preg_match('/product-list-item-(?<asin>[A-Za-z0-9]{10})/m', $this->content, $matches);
 
-            $this->set('id', $matches[1] ?? '');
+            if (empty($matches['asin'])) {
+                preg_match('/product-list-flyout-(.+)"/msU', $this->content, $matches);
+            }
+
+            $this->set('id', $matches['asin'] ?? $matches[1] ?? '');
         }
 
         return $this->get('id');
@@ -39,12 +44,55 @@ class AudibleSearchParser
     public function getTitle(): string
     {
         if (!$this->has('title')) {
-            preg_match('/<h3\s.+>.+<a[^>]+>(.+)<\/a/msU', $this->content, $matches);
+            // L'aria-label du bloc est le titre fiable (pages recherche et série) — le
+            // rendu du <h3> varie (produits sans fiche standard, ex. tome indisponible).
+            // ENT_HTML5 pour &apos; ; double décodage, les labels sont double-encodés
+            // (&amp;#39; → &#39; → ').
+            preg_match('/productListItem[^>]*aria-label=[\'"](?<title>[^\'"]*)[\'"]/m', $this->content, $ariaMatches);
+            $title = trim(html_entity_decode($ariaMatches['title'] ?? '', ENT_QUOTES | ENT_HTML5));
+            $title = trim(html_entity_decode($title, ENT_QUOTES | ENT_HTML5));
 
-            $this->set('title', trim(html_entity_decode($matches[1] ?? '')));
+            if ('' === $title) {
+                preg_match('/<h3\s.+>.+<a[^>]+>(.+)<\/a/msU', $this->content, $matches);
+                $title = trim(html_entity_decode($matches[1] ?? ''));
+            }
+
+            $this->set('title', $title);
         }
 
         return $this->get('title');
+    }
+
+    /**
+     * Liens « Série : … » de la page, par nom de saga — chemin absolu de la page série
+     * (sans les paramètres de suivi Audible).
+     *
+     * @return array<string, string>
+     */
+    public function getSeriesUrls(): array
+    {
+        if (!$this->has('seriesUrls')) {
+            preg_match_all(
+                '/seriesLabel[^>]*>\s*<span[^>]*>\s*Série\s*:.*?<a[^>]+href="(?<href>\/series\/[^"]+)"[^>]*>(?<name>.*?)<\/a>/mis',
+                $this->content,
+                $matches,
+                PREG_SET_ORDER,
+            );
+
+            $urls = [];
+
+            foreach ($matches as $match) {
+                $name = trim(html_entity_decode($match['name']));
+
+                if ($name !== '' && !isset($urls[$name])) {
+                    $urls[$name] = explode('?', $match['href'])[0];
+                }
+            }
+
+            $this->set('seriesUrls', $urls);
+        }
+
+        return $this->get('seriesUrls');
     }
 
     public function computeSagaMetadata(): self
@@ -167,7 +215,7 @@ class AudibleSearchParser
         return $this->get('ratings');
     }
 
-    public function getBooks(): array
+    public function getBooks(bool $requireNarrator = true): array
     {
         preg_match_all('/productListItem.+bc-spacing-top-base.+<\/li/msU', $this->content, $matches);
 
@@ -175,10 +223,12 @@ class AudibleSearchParser
             return [];
         }
 
-        $books = array_map(function ($match) {
+        $books = array_map(function ($match) use ($requireNarrator) {
             $parser = new self($match);
 
-            if (!$parser->getNarrators()) {
+            // Sur une page série, un livre sans narrateur parsé reste un livre de la
+            // saga (ex. tome sans fiche standard) : le filtre n'est appliqué qu'en recherche.
+            if ($requireNarrator && !$parser->getNarrators()) {
                 return null;
             }
 

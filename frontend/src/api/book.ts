@@ -125,17 +125,49 @@ export function clearBooksCache(): void {
   booksEtag = null
 }
 
-export async function search(pattern: string): Promise<Array<Book>> {
-  if (!pattern) {
+// Cache mémoire des recherches : /api/scrap scrape Audible côté serveur (lent),
+// retaper la même recherche ne doit pas re-scrape. Seuls les résultats non vides
+// sont mis en cache (un échec ou un « aucun résultat » doit pouvoir réessayer).
+const searchCache = new Map<string, Array<Book>>()
+const SEARCH_CACHE_MAX = 50
+
+// Réinitialise le cache des recherches (tests, rafraîchissement forcé).
+export function clearSearchCache(): void {
+  searchCache.clear()
+}
+
+export async function search(pattern: string, signal?: AbortSignal): Promise<Array<Book>> {
+  const key = normalizeSearch(pattern)
+
+  if (!key) {
     return []
   }
 
-  const result = await fetch(
-    `${API_BASE_URL}/api/scrap?pattern=${encodeURIComponent(normalizeSearch(pattern))}`,
-  )
-  const data = await result.json()
+  const cached = searchCache.get(key)
 
-  return bookCollectionFromApi(data)
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/scrap?pattern=${encodeURIComponent(key)}`,
+    ...(signal ? [{ signal }] : []),
+  )
+  const books = bookCollectionFromApi(await response.json())
+
+  if (books.length) {
+    if (searchCache.size >= SEARCH_CACHE_MAX) {
+      const oldest = searchCache.keys().next().value
+
+      if (oldest !== undefined) {
+        searchCache.delete(oldest)
+      }
+    }
+
+    searchCache.set(key, books)
+  }
+
+  return books
 }
 
 export interface UploadOptions {

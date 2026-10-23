@@ -74,6 +74,35 @@ class ScrapControllerTest extends WebTestCase
         self::assertSame([], json_decode($client->getResponse()->getContent(), true));
     }
 
+    public function testScrapKeepsResultsWhenAScraperFails(): void
+    {
+        // Un scraper en échec (réseau, anti-bot…) ne doit pas priver des résultats de l'autre.
+        $client = static::createClient();
+
+        $audibleBook = (new Book())
+            ->setScrapId('B000123')
+            ->setTitle('Harry Potter')
+            ->setCover('https://example.com/c.jpg')
+            ->setAuthor('J.K. Rowling')
+            ->setNarrators(['Un narrateur']);
+
+        $lizzie = $this->createStub(LizzieScraper::class);
+        $lizzie->method('search')->willThrowException(new \RuntimeException('Lizzie hors ligne'));
+
+        $audible = $this->createStub(AudibleScraper::class);
+        $audible->method('search')->willReturn([$audibleBook]);
+
+        $container = $client->getContainer();
+        $container->set(LizzieScraper::class, $lizzie);
+        $container->set(AudibleScraper::class, $audible);
+
+        $client->request('GET', '/api/scrap?pattern=harry');
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        $data = json_decode($client->getResponse()->getContent(), true);
+        self::assertSame(['B000123'], array_column($data, 'scrap_id'));
+    }
+
     public function testScrapSerializedFieldsMatchBookReadGroup(): void
     {
         $client = static::createClient();

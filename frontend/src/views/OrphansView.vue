@@ -8,6 +8,7 @@ import { useBookStore } from '@/stores/book.ts'
 import BookForm from '@/components/BookForm.vue'
 import IconTrash from '@/components/icons/IconTrash.vue'
 import IconClose from '@/components/icons/IconClose.vue'
+import { filenameToSearchTerm } from '@/helpers/search.ts'
 
 const bookStore = useBookStore()
 
@@ -18,18 +19,9 @@ const error = ref('')
 
 const formError = ref('')
 
-// Comme en /add : le nom du fichier orphelin pré-remplit la recherche de métadonnées.
-const searchTerm = computed(() => {
-  const name = selected.value?.name
-
-  if (!name) {
-    return ''
-  }
-
-  const lastDot = name.lastIndexOf('.')
-
-  return lastDot > 0 ? name.substring(0, lastDot) : name
-})
+// Comme en /add : le nom du fichier orphelin pré-remplit la recherche de métadonnées
+// (extension, tome, tags qualité et déterminants retirés — helpers/search).
+const searchTerm = computed(() => (selected.value?.name ? filenameToSearchTerm(selected.value.name) : ''))
 
 const selectedIndex = computed(() =>
   orphans.value.findIndex((orphan) => orphan.id === selected.value?.id),

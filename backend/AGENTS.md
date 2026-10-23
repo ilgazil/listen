@@ -84,8 +84,10 @@ src/
     ├── Scraping/
     │   ├── ScraperInterface.php
     │   ├── ScrapperFactory.php      # choix du scraper selon $book->scraper
+    │   ├── SearchRanker.php         # normalisation multibyte, scoring de pertinence, fusion/dédup des sources
+    │   ├── Fetcher.php              # GET HTTP avec timeout + User-Agent (la lib cURL n'en définit aucun)
     │   ├── Cache.php                # trait cache regex (mémoïsation par parser)
-    │   ├── Audible/                 # AudibleScraper, AudibleSearchParser, AudibleBookParser
+    │   ├── Audible/                 # AudibleScraper (enrichissement série), AudibleSearchParser, AudibleBookParser, AudibleSeriesCache
     │   └── Lizzie/                  # LizzieScraper, LizzieCache, LizzieItem
     └── Uploading/
         └── LocalFileUploader.php    # dépose un UploadedFile dans public/uploads/files
@@ -124,11 +126,15 @@ src/
   URI) à chaque requête ; **304** (corps vide) si `If-None-Match` correspond (court-circuit via contrôleur
   jetable, avant toute pipeline API Platform), sinon **200** + `ETag` + `Cache-Control: private, max-age=0, must-revalidate`.
 - `GET /api/books/{id}` — détail (API Platform).
-- `GET /api/scrap?pattern=...` — recherche de métadonnées, **fusion Lizzie + Audible**.
-  - `pattern` est normalisé (`strtolower`, non-word → espace, espaces multiples → un seul).
-  - Lizzie : recherche substring (titre OU auteur, insensible à la casse) dans le catalogue en cache, max 20.
-  - Audible : scrap de la page de recherche audible.fr.
+- `GET /api/scrap?pattern=...` — recherche de métadonnées, **fusion Lizzie + Audible classée par pertinence**.
+  - Pattern normalisé via `SearchRanker::normalize()` (multibyte : accents translittérés, apostrophes,
+    ponctuation → espaces).
+  - Lizzie : catalogue en cache, titres/auteurs normalisés comme le pattern, matching par mots indépendants,
+    scoring par pertinence (`SearchRanker::score()` + seuil `MIN_SCORE`), meilleurs scores d'abord (max 50).
+  - Audible : scrap de la page de recherche audible.fr via `Fetcher` (timeout 10s, User-Agent navigateur).
+  - **Fusion** : `SearchRanker::merge()` — score, dédup titre+auteur, tri pertinence, plafond 30.
   - **Filtre** : les résultats Audible sans narrateur sont écartés (dans `AudibleSearchParser::getBooks()`).
+  - **Résilience** : chaque scraper est isolé par try/catch — un échec ne prive jamais l'autre source de résultats.
 - `POST /api/upload` (multipart/form-data) — champs `author, title, cover, saga, tome, narrators, runtime, ratings,
   scraper, scrap_id` + `file` (ZIP obligatoire : **extension `.zip`** + mimes par contenu `application/zip`,
   `application/octet-stream`, `application/x-zip-compressed`, `multipart/x-zip`). Flux : upload local
@@ -153,12 +159,27 @@ src/
 
 ### Scraping
 - `ScraperInterface` : `search(string): array`, `get(string): ?Book`.
-- **Audible** (`AudibleScraper`) : `rawGet` sur `audible.fr` + **parsing regex du HTML** (`AudibleSearchParser`,
+- **Audible** (`AudibleScraper`) : `Fetcher::get` sur `audible.fr` + **parsing regex du HTML** (`AudibleSearchParser`,
   `AudibleBookParser`). Extrait : id, cover, title, saga/tome (`computeSagaMetadata()`), author, narrators, runtime, ratings.
-  Le parsing est fragile par nature (dépend du markup Audible).
+  Le parsing est fragile par nature (dépend du markup Audible). Titre/ASIN extraits de l'`aria-label` /
+  `product-list-item-` du bloc (le rendu `<h3>` varie selon les fiches).
+  **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche** (score ≥ `MIN_SERIES_SCORE`,
+  tous les mots du pattern dans le nom) a un lien « Série : … » dans les résultats, sa page série est scrapée
+  (elle liste la saga complète — même si un seul livre de la saga est dans les résultats) et fusionnée par ASIN —
+  filtrage narrateur désactivé pour ces pages (`getBooks(false)`), max 2 pages par recherche
+  (`MAX_SERIES_ENRICHMENTS`). Page série demandée avec **retries** (Audible renvoie souvent une 503 anti
+  rate-limiting, sans status HTTP d'échec côté cURL : on détecte l'absence de `productListItem`) et
+  **cache quotidien** (`AudibleSeriesCache`, dossier `public/cache/audible`). Échec = résultats de la
+  recherche seule.
 - **Lizzie** (`LizzieScraper`) : utilise `LizzieCache` — un JSON du catalogue (`lizzie-api.staytuned.io/v1/catalog`)
   mis en cache **une fois par jour** dans `public/cache/lizzie/cache_YYYY-MM-DD.json`. Extrait : title, author, cover,
   runtime, narrators (un seul champ). Pas de ratings ni saga/tome.
+- **`SearchRanker`** (statique) : `normalize()` (translittération accents, minuscules, ponctuation → espaces),
+  `words()`, `score()` (hiérarchie titre égal > commence par > contient > tous les mots > partiel),
+  `merge()` (fusion scorée des sources, dédup titre+auteur, plafond 30). Utilisé par `ScrapController`
+  et `LizzieScraper`.
+- **`Fetcher`** (statique) : GET HTTP borné (connect 4s / total 10s, redirect, User-Agent navigateur) —
+  utilisé par Audible et LizzieCache ; la lib cURL anlutro ne définit ni timeout ni UA.
 - `ScrapperFactory::fromBook(Book)` — résout le scraper par nom (`audible`/`lizzie`), sinon `InvalidArgumentException`.
 
 ### Upload local
@@ -235,6 +256,10 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 - `UnFichierApi::getDownloadId()` est **borné** (`MAX_INDEXING_ATTEMPTS` essais max, cf. `backend/SPECS.md` § 6)
   et renvoie **502** à l'épuisement.
 - `LizzieCache` écrit dans `public/cache/lizzie` : à whitelister/exclure dans les logs et backups.
+- `AudibleSeriesCache` écrit dans `public/cache/audible` (même remarque).
+- Pages série Audible : **souvent en 503** (anti rate-limiting, page d'erreur 2,3 Ko **sans status HTTP d'échec**
+  pour cURL) — d'où les retries + cache quotidien d'`AudibleScraper::fetchSeriesPage()`. Une recherche avec
+  enrichissement peut donc prendre quelques secondes de plus quand le cache est froid.
 - `Book.tome` est en `VARCHAR(40)` (migration faite) — ex. `1.5` passe.
 - Le champ `id` n'est pas auto-généré : les livres scrapés sont renvoyés sans `id` (`createBook()` n'appelle jamais `setId()`).
 - `UploadedFile::getMimeType()` redevine le type depuis le fichier et jette une fois le fichier déplacé par

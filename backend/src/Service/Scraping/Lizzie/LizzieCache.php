@@ -2,7 +2,8 @@
 
 namespace App\Service\Scraping\Lizzie;
 
-use anlutro\cURL\cURL;
+use anlutro\cURL\Request;
+use App\Service\Scraping\Fetcher;
 use DateTime;
 
 class LizzieCache
@@ -44,7 +45,7 @@ class LizzieCache
                 array_map(
                     fn($raw) => $raw->linkedContent,
                     json_decode(
-                        (new cURL())->jsonGet($this->endpoint . 'catalog')->body
+                        Fetcher::get($this->endpoint . 'catalog', Request::ENCODING_JSON)
                     )->payload,
                 ),
             ),

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clearBooksCache,
+  clearSearchCache,
   fetchBooks,
   normalizeSearch,
   reportUploadCut,
@@ -13,6 +14,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   clearBooksCache()
+  clearSearchCache()
 })
 
 class FakeXMLHttpRequest {
@@ -192,6 +194,45 @@ describe('search', () => {
     await search('Harry Potter!')
 
     expect(fetchMock).toHaveBeenCalledWith('/api/scrap?pattern=harry%20potter')
+  })
+
+  it('met en cache les résultats non vides et ne re-scrape pas la même recherche', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify([{ scrap_id: 'B1', title: 'Dune', cover: '', author: 'F. Herbert' }]),
+      ),
+    )
+
+    const first = await search('Dune')
+    const second = await search('dune')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(second).toBe(first)
+    expect(second).toHaveLength(1)
+  })
+
+  it('ne met pas en cache un résultat vide (permet de réessayer)', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify([])))
+
+    await search('inconnu')
+    await search('inconnu')
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('transmet le signal d’annulation à la requête', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify([])))
+    const controller = new AbortController()
+
+    await search('signal test', controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/scrap?pattern=signal%20test', {
+      signal: controller.signal,
+    })
   })
 })
 

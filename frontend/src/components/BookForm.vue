@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { search } from '@/api/book.ts'
 import { Book } from '@/entities/book.ts'
 import { Saga } from '@/entities/saga.ts'
@@ -30,6 +30,7 @@ const bookStore = useBookStore()
 
 const books = ref<Array<Book>>([])
 const loading = ref(false)
+const searchError = ref('')
 const term = ref('')
 const selectedSource = ref('')
 const scrapper = ref<Book['scraper']>('audible')
@@ -147,12 +148,6 @@ function select(book: Book): void {
   tome.value = book.saga?.tome || ''
 }
 
-const searchInput = useTemplateRef<HTMLInputElement>('search-input')
-
-function focusSearch() {
-  searchInput.value?.focus()
-}
-
 function onSearchChange(): void {
   if (term.value === lastSearch) {
     return
@@ -160,18 +155,47 @@ function onSearchChange(): void {
 
   lastSearch = term.value
   clearTimeout(searchHandle)
+  searchError.value = ''
   abortController.abort()
   abortController = new AbortController()
   searchHandle = setTimeout(async () => {
+    const current = lastSearch
+
     loading.value = true
-    books.value = await search(lastSearch)
-    loading.value = false
+
+    try {
+      const results = await search(current, abortController.signal)
+
+      // Une recherche plus récente a été lancée entre-temps : on jette ce résultat.
+      if (lastSearch !== current) {
+        return
+      }
+
+      books.value = results
+    } catch (err) {
+      if (lastSearch !== current || (err as Error)?.name === 'AbortError') {
+        return
+      }
+
+      // Le spinner est débloqué et l'erreur affichée : avant, un échec le laissait tourner.
+      searchError.value = 'La recherche a échoué. Vérifie la connexion puis réessaie.'
+    } finally {
+      if (lastSearch === current) {
+        loading.value = false
+      }
+    }
   }, 200)
+}
+
+function retrySearch(): void {
+  lastSearch = ''
+  onSearchChange()
 }
 
 function closeSearch(): void {
   books.value = []
   loading.value = false
+  searchError.value = ''
   term.value = ''
   lastSearch = ''
 }
@@ -185,6 +209,7 @@ function submit(event: Event) {
 function reset(): void {
   books.value = []
   loading.value = false
+  searchError.value = ''
   term.value = ''
   lastSearch = ''
   selectedSource.value = ''
@@ -284,7 +309,6 @@ function reset(): void {
       <div class="search-input">
         <input
           type="text"
-          ref="search-input"
           v-model="term"
           @input="onSearchChange"
           placeholder="Rechercher des métadonnées..."
@@ -305,12 +329,16 @@ function reset(): void {
       />
     </div>
 
+    <div v-else-if="searchError" class="empty">
+      {{ searchError }}
+      <button type="button" class="neon" @click="retrySearch">Réessaie</button>
+    </div>
+
     <div v-else-if="term" class="empty">
       Aucun résultat trouvé pour
       <i>{{ term }}</i
-      >.
-      <button type="button" class="neon" @click="focusSearch">Affinez-le</button>
-      ou saisissez manuellement les métadonnées !
+      >
+      mais vous pouvez saisir manuellement les métadonnées !
     </div>
   </div>
 </template>

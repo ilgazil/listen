@@ -46,10 +46,57 @@ class LizzieScraperTest extends TestCase
         self::assertCount(1, $results);
     }
 
-    public function testSearchReturnsMax20Results(): void
+    public function testSearchMatchesAccentsAndApostrophes(): void
+    {
+        // Le pattern arrive normalisé (accents/apostrophes retirés) : le titre brut
+        // doit être normalisé de la même façon pour matcher.
+        $scraper = $this->createScraperWithLibrary([
+            $this->makeRaw('b1', "L'Étranger", 'Albert Camus'),
+            $this->makeRaw('b2', 'Harry Potter à l\'école des sorciers', 'J.K. Rowling'),
+        ]);
+
+        self::assertCount(1, $scraper->search('l etranger'));
+        self::assertCount(1, $scraper->search('ecole'));
+    }
+
+    public function testSearchMatchesWordsInAnyOrder(): void
+    {
+        $scraper = $this->createScraperWithLibrary([
+            $this->makeRaw('b1', 'Harry Potter à l\'école des sorciers', 'J.K. Rowling'),
+        ]);
+
+        // Avant : la phrase entière devait être une sous-chaîne contiguë → raté.
+        self::assertCount(1, $scraper->search('sorciers potter harry'));
+    }
+
+    public function testSearchRanksBestMatchesFirst(): void
+    {
+        $scraper = $this->createScraperWithLibrary([
+            $this->makeRaw('b1', 'Harry Potter à l\'école des sorciers', 'J.K. Rowling'),
+            $this->makeRaw('b2', 'Le bal des Potter et des Harry', 'Autre'),
+        ]);
+
+        $results = $scraper->search('harry potter');
+
+        self::assertCount(2, $results);
+        // Le titre qui commence par la phrase (90) passe devant tous-les-mots (60).
+        self::assertSame('b1', $results[0]->getScrapId());
+    }
+
+    public function testSearchMatchesUnderscoredPattern(): void
+    {
+        // Terme dérivé d'un nom de fichier à underscores (« dune_frank_herbert »).
+        $scraper = $this->createScraperWithLibrary([
+            $this->makeRaw('b1', 'Dune', 'Frank Herbert'),
+        ]);
+
+        self::assertCount(1, $scraper->search('dune_frank_herbert'));
+    }
+
+    public function testSearchReturnsMax50Results(): void
     {
         $rawItems = [];
-        for ($i = 0; $i < 25; $i++) {
+        for ($i = 0; $i < 60; $i++) {
             $rawItems[] = $this->makeRaw("book-$i", "Livre $i matching", 'Auteur');
         }
 
@@ -57,7 +104,7 @@ class LizzieScraperTest extends TestCase
 
         $results = $scraper->search('matching');
 
-        self::assertCount(20, $results);
+        self::assertCount(50, $results);
     }
 
     public function testSearchReturnsEmptyArrayOnNoMatch(): void

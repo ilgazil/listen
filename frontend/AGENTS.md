@@ -84,6 +84,7 @@ src/
 ├── assets/         # main.css (thème), base.css, images
 ├── components/     # BookLarge/BookCard, DropBox, Form*, Link*, Section*, queue/FormQueue, icons/
 ├── entities/       # Book, Saga (classes) + type guard isSagaBook
+├── helpers/        # logique indépendante des composants (helpers/search.ts : filenameToSearchTerm)
 ├── router/         # routes "/" (HomeView), "/add" (FormView), "/edit/:id", "/saga/:id", "/orphans" (OrphansView), "/intruders" (IntrudersView)
 ├── stores/         # Pinia: book.ts (bibliothèque), queue.ts (file d'envoi), history.ts (historique de navigation)
 └── views/          # HomeView, FormView, SagaView, OrphansView, IntrudersView
@@ -96,7 +97,9 @@ src/
 - `GET /api/books?pagination=false` → `{ member: Book[] }` — liste de la bibliothèque (`fetchBooks()`). **ETag/304** :
   `fetchBooks()` revalide à chaque appel (`If-None-Match` + `cache: 'no-cache'`) et réutilise la liste en cache sur
   304 (même référence → `$patch` no-op). `clearBooksCache()` reset ce cache (tests / refresh forcé).
-- `GET /api/scrap?pattern=…` → `Book[]` — recherche de métadonnées fusionnée Audible + Lizzie (`search()`).
+- `GET /api/scrap?pattern=…` → `Book[]` — recherche de métadonnées fusionnée Audible + Lizzie (`search()`),
+  **classée par pertinence côté backend** ; résultats non vides mis en cache client (`clearSearchCache()` pour
+  reset) ; `signal` optionnel pour annuler (`AbortSignal`).
 - `POST /api/upload` (multipart) — envoi d'un ZIP + métadonnées vers 1Fichier ; **201** + Book JSON (avec `id` =
   id 1Fichier), **400** si formulaire invalide, **500** si échec persist, **502** si échec 1Fichier (`uploadBook()`,
   en **XHR** avec `onProgress`/`signal` pour le suivi de progression et l'abort).

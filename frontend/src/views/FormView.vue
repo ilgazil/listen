@@ -8,6 +8,7 @@ import { useBookStore } from '@/stores/book.ts'
 import { useHistoryStore } from '@/stores/history.ts'
 import BookForm from '@/components/BookForm.vue'
 import DropBox from '@/components/DropBox.vue'
+import { filenameToSearchTerm } from '@/helpers/search.ts'
 
 const props = defineProps({
   id: String,
@@ -23,10 +24,9 @@ const notFound = computed(() => isEditing.value && bookStore.books.length > 0 &&
 const file = ref<File>()
 const error = ref('')
 
-// En création, le nom du fichier pré-remplit la recherche de métadonnées.
-const searchTerm = computed(() =>
-  file.value ? file.value.name.substring(0, file.value.name.lastIndexOf('.')) : '',
-)
+// En création, le nom du fichier pré-remplit la recherche de métadonnées :
+// extension, tome, tags qualité et déterminants retirés (helpers/search).
+const searchTerm = computed(() => (file.value ? filenameToSearchTerm(file.value.name) : ''))
 
 watch(
   () => props.id,

@@ -8,6 +8,8 @@ use PHPUnit\Framework\TestCase;
 class AudibleSearchParserTest extends TestCase
 {
     private const string FIXTURE = __DIR__ . '/../../../Fixtures/audible-search.html';
+    private const string SERIES_FIXTURE = __DIR__ . '/../../../Fixtures/audible-series.html';
+    private const string BOURBON_FIXTURE = __DIR__ . '/../../../Fixtures/audible-bourbon-search.html';
 
     public function testSagaFromSubtitleWithCommaTome(): void
     {
@@ -160,6 +162,52 @@ class AudibleSearchParserTest extends TestCase
         $browne = $books[8];
         self::assertSame('Scarlett and Browne', $browne->getSaga());
         self::assertSame('3', $browne->getTome());
+    }
+
+    public function testSeriesFixtureListsFullSaga(): void
+    {
+        if (!is_file(self::SERIES_FIXTURE)) {
+            self::markTestSkipped('fixture audible-series.html non présente (gitignorée).');
+        }
+
+        $parser = new AudibleSearchParser((string) file_get_contents(self::SERIES_FIXTURE));
+
+        // La page série liste la saga complète : le tome sans narrateur parsé est inclus.
+        $books = $parser->getBooks(false);
+
+        self::assertCount(11, $books);
+
+        $tomes = array_map(fn($book) => $book->getTome(), $books);
+
+        self::assertContains('8', $tomes);
+
+        $tome8 = $books[array_search('8', $tomes)];
+        self::assertSame("Que le diable l'emporte", $tome8->getTitle());
+        self::assertSame('B07WNK1W8H', $tome8->getScrapId());
+        self::assertSame('Bourbon Kid', $tome8->getSaga());
+    }
+
+    public function testSearchFixtureExposesSeriesUrls(): void
+    {
+        if (!is_file(self::BOURBON_FIXTURE)) {
+            self::markTestSkipped('fixture audible-bourbon-search.html non présente (gitignorée).');
+        }
+
+        $parser = new AudibleSearchParser((string) file_get_contents(self::BOURBON_FIXTURE));
+
+        $seriesUrls = $parser->getSeriesUrls();
+
+        self::assertSame(
+            '/series/Bourbon-Kid-Livres-Audio/B07F77M8JL',
+            $seriesUrls['Bourbon Kid'],
+        );
+    }
+
+    public function testSeriesUrlsEmptyWithoutSeriesLinks(): void
+    {
+        $parser = new AudibleSearchParser('<li class="productListItem">x</li>');
+
+        self::assertSame([], $parser->getSeriesUrls());
     }
 
     private function fragment(string $subtitle = '', string $series = '', string $seriesRest = '', string $rating = ''): string

@@ -62,18 +62,23 @@ Route API Platform auto-générée (item). `id` = chaîne (ID de téléchargemen
 
 ### 3.3 `GET /api/scrap?pattern=…`
 
-`ScrapController::__invoke` — recherche de métadonnées **fusionnée Lizzie + Audible**.
+`ScrapController::__invoke` — recherche de métadonnées **fusionnée Lizzie + Audible**, classée par pertinence.
 
 | Élément | Valeur |
 |---------|--------|
 | Query | `pattern` (obligatoire, sinon `[]`) |
 | Réponse | `[ Book JSON ]` (tableau, sérialisé avec `groups: ['book:read']`, `iri: false`, `skip_null_values: true`, `api_platform_disable: true`) |
-| Lizzie | recherche substring (titre OU auteur, insensible à la casse), max 20 résultats |
-| Audible | scrap page audible.fr ; **les résultats sans narrateur sont écartés** (`AudibleSearchParser::getBooks()`) |
-| Ordre | Lizzie d'abord, puis Audible |
+| Normalisation | `SearchRanker::normalize()` — multibyte (translittération Any-Latin → Latin-ASCII, minuscules, non-alphanumérique → espace). Anciennement `\W` sans flag `u` qui scindait les accents en octets. |
+| Lizzie | catalogue en cache, titres/auteurs **normalisés comme le pattern** (accents, apostrophes), matching **par mots indépendants** (« l etranger » trouve « L'Étranger », l'ordre des mots importe peu), scoring `SearchRanker::score()` (seuil `MIN_SCORE = 20` : une correspondance partielle doit compter au moins 2 mots distinctifs), meilleurs scores d'abord, max 50 |
+| Audible | scrap page audible.fr ; **les résultats sans narrateur sont écartés** (`AudibleSearchParser::getBooks()`). Titre et ASIN issus de l'`aria-label` / `product-list-item-` du bloc (fiables sur tous les rendus). |
+| Enrichissement série | Dès qu'une saga dont le **nom matche la recherche** (score `SearchRanker::score()` ≥ 60 : tous les mots du pattern dans le nom de saga) a un lien `Série : …` sur la page de résultats (`AudibleSearchParser::getSeriesUrls()`), sa **page série** est scrapée (`AudibleScraper::fetchSeriesPage()`) — même si un seul livre de la saga est dans les résultats. Elle liste la saga complète, y compris les tomes absents de la recherche. Filtrage narrateur désactivé pour ces pages (`getBooks(false)`). Max 2 pages série par recherche (meilleurs scores). Fusion dédup par ASIN (la version avec narrateurs prime). **Retries** (≤ 3, 1 s d'écart — Audible renvoie régulièrement une 503 anti rate-limiting sur ces pages) + **cache quotidien** du HTML (`AudibleSeriesCache`, `public/cache/audible`). En cas d'échec : résultats de la recherche seule, sans erreur. |
+| Fusion | `SearchRanker::merge()` — score, dédup (titre + auteur normalisés ; à score égal on garde la version avec saga), tri par pertinence décroissante, plafond global 30. Les résultats sans score sont conservés en fin de liste. |
+| Résilience | chaque scraper est appelé dans un try/catch (`ScrapController::search()`) : un échec (réseau, anti-bot…) logue en `error` et renvoie `[]` — l'autre source reste exploitable. |
+| Timeout | `Fetcher` (cURL) : `CONNECTTIMEOUT 4s`, `TIMEOUT 10s`, `FOLLOWLOCATION`, User-Agent navigateur — la lib anlutro ne définit rien par défaut. |
 
-Bug mineur à corriger au passage : `ScrapController` lit `$request->query->get('pattern')` pour la validation mais
-`$request->get('pattern')` pour la recherche → unifier sur `$request->query->get('pattern')`.
+Hiérarchie des scores (`SearchRanker::score()`) : titre égal (100) > commence par la phrase (90) > contient la
+phrase (80) > tous les mots dans le titre (60) > tous les mots répartis titre/auteur (40) > tous les mots dans la
+saga (35) > correspondances partielles pondérées (les mots ≤ 3 caractères sont ignorés en partiel).
 
 ### 3.4 Restrictions (à ne pas casser)
 

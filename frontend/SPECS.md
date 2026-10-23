@@ -62,16 +62,25 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
     liste les livres de la saga **triés par tome** (`bookStore.sagaById` + `bookStore.fromSaga`). Le
     « ← Retour » du header revient dans l'historique (`historyStore.backOrHome()` — cf. § 3.8).
 - **`/add` (FormView)** :
-  1. `DropBox` : drag & drop ou clic → le **nom du fichier pré-remplit la recherche**, extension et déterminants (le, a, etc.) retirés.
+  1. `DropBox` : drag & drop ou clic → le **nom du fichier pré-remplit la recherche**, nettoyé par
+     `filenameToSearchTerm()` (`helpers/search.ts`) : extension, séparateurs (`._-[](){}…`), marqueurs de tome
+     (« tome 1 », « t2 », nombres ≤ 2 chiffres), tags qualité (« mp3 », « 144kbps », « v2 »…) et déterminants
+     (le, la, les, un, du, des…) retirés ; l'apostrophe est conservée (« l'école » reste un token). Retombe sur le
+     nom brut si tout est filtré.
      Le fichier doit porter l'extension `.zip` (`accept=".zip"` + contrôle client) — sinon message
      « Seuls les fichiers .zip sont acceptés. ».
-  2. La recherche (`search()`) est lancée avec **debounce 200 ms** + `AbortController`.
+  2. La recherche (`search()`) est lancée avec **debounce 200 ms** + `AbortController` (signal transmis au fetch) ;
+     les réponses périmées (recherche plus récente lancée) sont jetées ; les résultats **non vides sont mis en
+     cache** côté client (`searchCache` FIFO 50 entrées dans `api/book.ts`) — retaper la même recherche ne
+     re-scrape pas Audible. Une erreur réseau affiche « La recherche a échoué… » + bouton « Réessaie »
+     (avant : le spinner restait bloqué).
   3. Suggestions affichées en tuiles `BookCard` (grille `repeat(auto-fill, 9rem)` ≈ 1/3 d'une carte bibliothèque) ; un clic **remplit tous les champs** (scraper, scrapId, cover, title,
       author, narrators, runtime, ratings, saga, tome).
   4. L'utilisateur **édite librement** les champs ; la preview (`BookLarge`, sans download) se met à jour en direct.
   5. « Enregistrer » → ajoute `{ state: 'draft', book }` à la **queue** et **reset** le formulaire
      (**pas de navigation** : on peut enchaîner les livres).
-  6. Si aucun résultat : message « Aucun résultat trouvé pour _X_ » + bouton « Affinez-le » (refocus) ou saisie manuelle.
+  6. Si aucun résultat : message « Aucun résultat trouvé pour _X_ » + « mais vous pouvez saisir manuellement les
+     métadonnées ! » (le bouton « Affinez-le » a été retiré — la saisie manuelle est la seule suite).
 - **Queue (panneau latéral droit, visible sur toutes les routes)** : drafts listés en `BookCard` compact horizontal
   (couverture, titre, auteur, statut) + boutons **Envoyer** (tous → `pending`) et **Annuler** (retire les drafts). Cliquer sur un élement doit ouvrir le formulaire associé pour modification. De là on peut aussi le supprimer.
   En dessous de 1024px, la queue passe **sous le formulaire** (33vh) et les drafts reprennent le format tuile des
@@ -81,8 +90,12 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
 
 - `normalizeSearch()` (`api/book.ts`) : minuscules, suppression des accents (NFD), caractères non alphanumériques → espaces,
   retrait des caractères isolés. Envoyé tel quel à `GET api/scrap?pattern=…`.
-- Réponse : fusion des scrapers **Audible** (page audible.fr) et **Lizzie** (catalogue en cache). Un livre Audible
-  **sans narrateur est filtré côté backend**.
+- Réponse : fusion des scrapers **Audible** (page audible.fr) et **Lizzie** (catalogue en cache), **classée par
+  pertinence côté backend** (`SearchRanker::merge()` : scoring, dédup titre+auteur, plafond 30 ; matching Lizzie
+  tolérant aux accents/apostrophes et à l'ordre des mots). Un livre Audible **sans narrateur est filtré côté
+  backend**. Un scraper en échec ne prive jamais des résultats de l'autre.
+- Résultats **non vides mis en cache** client (`searchCache`, FIFO 50) ; `clearSearchCache()` reset (tests).
+  Une recherche peut être annulée (`signal`) ; les réponses périmées sont jetées (`BookForm`).
 - Sélection d'une suggestion → mapping vers les champs du formulaire.
 
 ### 3.3 Édition des métadonnées — fonctionnalité clé

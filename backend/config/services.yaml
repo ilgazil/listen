@@ -6,6 +6,7 @@
 parameters:
     upload_directory: '%kernel.project_dir%/public/uploads/files'
     lizzie_cache: '%kernel.project_dir%/public/cache/lizzie'
+    audible_cache: '%kernel.project_dir%/public/cache/audible'
 
 services:
     # configuration par défaut des services de *ce* fichier
@@ -36,3 +37,7 @@ services:
     App\Service\Scraping\Lizzie\LizzieCache:
         arguments:
             $cacheDirectory: '%lizzie_cache%'
+
+    App\Service\Scraping\Audible\AudibleSeriesCache:
+        arguments:
+            $cacheDirectory: '%audible_cache%'
