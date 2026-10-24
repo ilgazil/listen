@@ -478,6 +478,10 @@ form {
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-color: var(--color-amber) transparent;
+  scrollbar-width: thin;
 
   .search {
     display: flex;
@@ -529,18 +533,11 @@ form {
     justify-content: center;
     gap: 1rem;
     width: 100%;
-    max-height: 28rem;
-    overflow-y: auto;
-    /* Padding intérieur + marge négative : les lueurs des cartes au survol
-       ne sont pas coupées par la zone défilante. */
-    padding: 0.5rem;
-    margin: -0.5rem;
-    scrollbar-color: var(--color-amber) transparent;
-    scrollbar-width: thin;
   }
 
   .suggestion {
     cursor: pointer;
+    overflow: hidden;
 
     &:hover {
       box-shadow: 0 0 10px var(--color-amber);

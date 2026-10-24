@@ -77,9 +77,11 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
      cache** côté client (`searchCache` FIFO 50 entrées dans `api/book.ts`) — retaper la même recherche ne
      re-scrape pas Audible. Une erreur réseau affiche « La recherche a échoué… » + bouton « Réessaie »
      (avant : le spinner restait bloqué).
-  3. Suggestions affichées en tuiles `BookCard` (grille `repeat(auto-fill, 9rem)` ≈ 1/3 d'une carte bibliothèque)
-     dans une **zone défilante** (max-height 28rem ≈ 2 rangées, scrollbar ambre fine) ; un clic **remplit tous les
-     champs** (scraper, scrapId, cover, title, author, narrators, runtime, ratings, saga, tome).
+  3. Suggestions affichées en tuiles `BookCard` (grille `repeat(auto-fill, 9rem)` ≈ 1/3 d'une carte bibliothèque).
+     Le **bloc `.suggestions`** (recherche + résultats) est la **zone défilante** (max-height 60vh, scrollbar ambre
+     fine) — la liste `.results` n'a pas de hauteur propre et les cartes clipsent leur contenu
+     (`.suggestion { overflow: hidden }`). Un clic **remplit tous les champs** (scraper, scrapId, cover, title,
+     author, narrators, runtime, ratings, saga, tome).
   4. L'utilisateur **édite librement** les champs ; la preview (`BookLarge`, sans download) se met à jour en direct.
   5. « Enregistrer » → ajoute `{ state: 'draft', book }` à la **queue** et **reset** le formulaire
      (**pas de navigation** : on peut enchaîner les livres).
