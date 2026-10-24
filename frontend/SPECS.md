@@ -40,9 +40,11 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
 
 ### 3.1 Parcours utilisateur
 
-- **`/` (HomeView)** : toggle « Sagas / Livres », **mode Sagas par défaut**. Bouton flottant `+` → `/add`
-  (**masqué quand la file d'envoi est visible** — il passerait par dessus le panneau ; le panneau propose alors
-  un bouton « Ajouter » dans sa barre d'actions, cf. § 3.4). Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
+- **`/` (HomeView)** : toggle « Sagas / Livres », **mode Sagas par défaut**. Bouton flottant `+` → `/add`,
+  **défini au niveau de `App.vue`** : visible sur toutes les routes sauf `/add` (le formulaire y est déjà), donc
+  aussi sur saga, édition, orphelins, intrus — **masqué quand la file d'envoi est visible** (il passerait par
+  dessus le panneau ; le panneau propose alors un bouton « Ajouter » dans sa barre d'actions, cf. § 3.4).
+  Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
   `workMatches` dans `entities/book.ts`) sur : titre, nom de saga, auteur ou narrateur — **insensible
   à la casse et aux accents**, tous les mots du terme doivent matcher (`Aucun résultat` si vide).
   Recherche et mode sont **persistés dans l'URL** (`/?q=…&mode=books`, écriture en `router.replace` pour ne pas

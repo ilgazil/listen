@@ -2,7 +2,6 @@
 import { statusLabel, useQueueStore } from '@/stores/queue'
 import BookCard from '@/components/BookCard.vue'
 import IconCloud from '@/components/icons/IconCloud.vue'
-import IconDownload from '@/components/icons/IconDownload.vue'
 import IconTrash from '@/components/icons/IconTrash.vue'
 import { useRoute } from 'vue-router'
 
@@ -88,10 +87,7 @@ function clearQueue(): void {
       <!-- Le bouton flottant « + » de la bibliothèque est masqué quand le panneau est
            visible (il passerait par dessus) : l'accès à /add vit ici. Masqué sur /add
            même, où il serait redondant. -->
-      <RouterLink v-if="route.path !== '/add'" to="/add" class="add">
-        <IconDownload />
-        Ajouter
-      </RouterLink>
+      <RouterLink v-if="route.path !== '/add'" to="/add" class="add">Ajouter</RouterLink>
 
       <button
         v-if="

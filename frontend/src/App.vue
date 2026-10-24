@@ -6,6 +6,7 @@ import { useBookStore } from '@/stores/book.ts'
 import { useQueueStore } from '@/stores/queue.ts'
 import { useHistoryStore } from '@/stores/history.ts'
 import FormQueue from '@/components/queue/FormQueue.vue'
+import IconDownload from '@/components/icons/IconDownload.vue'
 
 const route = useRoute()
 const queueStore = useQueueStore()
@@ -40,6 +41,14 @@ onMounted(async () => {
       <FormQueue />
     </div>
   </main>
+
+  <!-- Accès global à l'ajout d'un livre : sur toutes les routes sauf /add (le
+       formulaire y est déjà). Masqué quand la file d'envoi est visible : le
+       panneau propose alors « Ajouter » dans sa barre d'actions (sinon il
+       passerait par dessus). -->
+  <RouterLink v-if="route.path !== '/add' && !queueStore.uploads.length" to="/add" class="neon add">
+    <IconDownload />
+  </RouterLink>
 </template>
 
 <style scoped>
@@ -98,6 +107,31 @@ main {
       width: 100%;
       height: 33vh;
     }
+  }
+}
+
+.add {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  bottom: 1rem;
+  right: 1rem;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background-color: var(--color-amber);
+  color: var(--color-amber-darker);
+
+  &:hover {
+    background-color: var(--color-amber-light);
+    color: var(--color-amber-darker);
+    box-shadow: 0 0 12px var(--color-amber-light);
+  }
+
+  > * {
+    width: 3.5rem;
+    height: 3.5rem;
   }
 }
 </style>

@@ -4,16 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import BookLarge from '@/components/BookLarge.vue'
 import SagaTile from '@/components/SagaTile.vue'
 import { useBookStore } from '@/stores/book.ts'
-import { useQueueStore } from '@/stores/queue.ts'
 import { bookMatches, workMatches } from '@/entities/book.ts'
-import IconDownload from '@/components/icons/IconDownload.vue'
 import LinkDownload from '@/components/LinkDownload.vue'
 import LinkScrapper from '@/components/LinkScrapper.vue'
 
 const route = useRoute()
 const router = useRouter()
 const bookStore = useBookStore()
-const queueStore = useQueueStore()
 
 // Normalise une valeur de query string (string | string[] | null → string).
 function normalize(value: unknown): string {
@@ -135,12 +132,6 @@ const filteredBooks = computed(() =>
       </p>
     </main>
   </div>
-
-  <!-- Masqué quand la file d'envoi est visible : le bouton flottant passerait par
-       dessus le panneau, qui propose alors « Ajouter » dans sa barre d'actions. -->
-  <RouterLink v-if="!queueStore.uploads.length" to="/add" class="neon add">
-    <IconDownload />
-  </RouterLink>
 </template>
 
 <style scoped>
@@ -278,28 +269,4 @@ main {
   color: var(--color-dark);
 }
 
-.add {
-  position: fixed;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  bottom: 1rem;
-  right: 1rem;
-  width: 4rem;
-  height: 4rem;
-  border-radius: 50%;
-  background-color: var(--color-amber);
-  color: var(--color-amber-darker);
-
-  &:hover {
-    background-color: var(--color-amber-light);
-    color: var(--color-amber-darker);
-    box-shadow: 0 0 12px var(--color-amber-light);
-  }
-
-  > * {
-    width: 3.5rem;
-    height: 3.5rem;
-  }
-}
 </style>
