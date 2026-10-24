@@ -193,6 +193,12 @@ src/
 ### 1Fichier (`UnFichierApi`)
 - `upload($path, $mimeType, $name): string` : obtient un serveur d'upload, envoie le fichier, puis **polls**
   `ls.cgi` jusqu'à trouver le fichier et en extraire l'ID de téléchargement (boucle `do/while` avec `sleep(1)`).
+- **Détails d'erreur** : 1Fichier renvoie parfois des erreurs **en clair** (ex. `Error 503`) sans status HTTP
+  d'échec côté cURL — les corps de réponses (`get_upload_server.cgi`, `upload.cgi`, `ls.cgi`) sont donc vérifiés
+  et remontés dans les exceptions (`bodySnippet()` : `[status] corps, tronqué à 200 caractères`). Le listing
+  d'indexation échoue **immédiatement** sur une réponse non-OK (au lieu d'épuiser les 30 tentatives = 90 s).
+  `ApiController` propage ces messages dans les corps 502/500 (`{"error": "Upload to 1Fichier failed. …"}`) —
+  c'est ce détail qui alimente la propriété « Erreur » du rapport Discord (`UploadCutMessage`).
 - `download($id): string` : `get_token.cgi` → URL de téléchargement temporaire.
 - `getOrphans($existingIds)` / `getStoredIds()` : listing paginé `ls.cgi` du dossier applicatif — fichiers non
   référencés par un `Book`, inverse : hash d'accès des fichiers présents.

@@ -89,7 +89,7 @@ class ApiController extends AbstractController
             $this->logger->error($reference . ' : 1Fichier upload failed - ' . $e->getMessage());
             $this->deleteLocalFile($path);
 
-            return new JsonResponse(['error' => 'Upload to 1Fichier failed.'], Response::HTTP_BAD_GATEWAY);
+            return new JsonResponse(['error' => 'Upload to 1Fichier failed. ' . $e->getMessage()], Response::HTTP_BAD_GATEWAY);
         }
 
         $this->logger->debug($reference . ' : upload complete, id=' . $book->getId());
@@ -146,7 +146,7 @@ class ApiController extends AbstractController
             } catch (\Throwable $e) {
                 $this->logger->error($book->getId() . ' : 1Fichier rename failed - ' . $e->getMessage());
 
-                return new JsonResponse(['error' => 'Upload to 1Fichier failed.'], Response::HTTP_BAD_GATEWAY);
+                return new JsonResponse(['error' => 'Rename on 1Fichier failed. ' . $e->getMessage()], Response::HTTP_BAD_GATEWAY);
             }
         }
 

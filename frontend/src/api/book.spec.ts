@@ -25,6 +25,7 @@ class FakeXMLHttpRequest {
       ((event: { loaded: number; total: number; lengthComputable: boolean }) => void) | null,
   }
   response: unknown = null
+  responseText = ''
   responseType = ''
   status = 0
   onload: (() => void) | null = null
@@ -58,6 +59,8 @@ class FakeXMLHttpRequest {
   succeed(status: number, body: unknown): void {
     this.status = status
     this.response = body
+    // Le client lit responseText (type 'text') pour garder le corps brut en cas d'échec.
+    this.responseText = typeof body === 'string' ? body : JSON.stringify(body)
     this.onload?.()
   }
 
@@ -280,9 +283,21 @@ describe('uploadBook', () => {
 
     const promise = uploadBook(new Book(), new File(['zip'], 'book.zip'))
 
-    FakeXMLHttpRequest.last!.succeed(502, { error: 'Upload to 1Fichier failed.' })
+    FakeXMLHttpRequest.last!.succeed(502, { error: 'Upload to 1Fichier failed. [503] Error 503' })
 
-    await expect(promise).rejects.toThrow('Upload to 1Fichier failed.')
+    await expect(promise).rejects.toThrow('Upload to 1Fichier failed. [503] Error 503')
+  })
+
+  it('lève une erreur avec un extrait du corps brut quand la réponse n’est pas du JSON', async () => {
+    stubXhr()
+    const { Book } = await import('@/entities/book.ts')
+    const book = new Book()
+    book.title = 'Mon livre'
+
+    const promise = uploadBook(new Book(), new File(['zip'], 'book.zip'))
+    FakeXMLHttpRequest.last!.succeed(503, '<html><body>\n<h1>503 Service Unavailable</h1>\n</body></html>')
+
+    await expect(promise).rejects.toThrow('Échec de l\'envoi (503) — 503 Service Unavailable')
   })
 
   it('lève une erreur réseau si le transfert échoue', async () => {

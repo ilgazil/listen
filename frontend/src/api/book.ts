@@ -193,7 +193,9 @@ export function uploadBook(book: Book, file: File, options: UploadOptions = {}):
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE_URL}/api/upload`)
-    xhr.responseType = 'json'
+    // Texte plutôt que 'json' : en cas d'échec, le corps brut porte le détail
+    // (page d'erreur de l'hébergeur, message du backend…) que le mode json masque.
+    xhr.responseType = 'text'
 
     const handleAbort = (): void => xhr.abort()
 
@@ -212,10 +214,17 @@ export function uploadBook(book: Book, file: File, options: UploadOptions = {}):
     xhr.onload = () => {
       options.signal?.removeEventListener('abort', handleAbort)
 
-      const data = mapObject(xhr.response)
+      let data: unknown = null
+
+      try {
+        data = JSON.parse(xhr.responseText)
+      } catch {
+        // Corps non JSON (page d'erreur du serveur…) : le message d'échec
+        // inclura un extrait brut.
+      }
 
       if (xhr.status !== 201) {
-        reject(new Error(data?.error ? String(data.error) : `Échec de l'envoi (${xhr.status})`))
+        reject(new Error(describeUploadFailure(xhr.status, data, xhr.responseText)))
         return
       }
 
@@ -233,6 +242,23 @@ export function uploadBook(book: Book, file: File, options: UploadOptions = {}):
 
     xhr.send(form)
   })
+}
+
+// Message d'échec d'upload : l'erreur JSON du backend si présente, sinon un
+// extrait du corps brut (page 503 de l'hébergeur, erreur PHP…).
+function describeUploadFailure(status: number, data: unknown, body: string): string {
+  const error = mapObject(data)?.error
+
+  if (error) {
+    return String(error)
+  }
+
+  const snippet = body
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return `Échec de l'envoi (${status})` + (snippet ? ` — ${snippet.slice(0, 200)}` : '')
 }
 
 export function bookPayload(book: Book): Record<string, unknown> {

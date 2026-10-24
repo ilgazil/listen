@@ -102,7 +102,10 @@ src/
   reset) ; `signal` optionnel pour annuler (`AbortSignal`).
 - `POST /api/upload` (multipart) — envoi d'un ZIP + métadonnées vers 1Fichier ; **201** + Book JSON (avec `id` =
   id 1Fichier), **400** si formulaire invalide, **500** si échec persist, **502** si échec 1Fichier (`uploadBook()`,
-  en **XHR** avec `onProgress`/`signal` pour le suivi de progression et l'abort).
+  en **XHR** avec `onProgress`/`signal` pour le suivi de progression et l'abort). En cas d'échec, le message
+  d'erreur JSON du backend est utilisé tel quel ; si la réponse n'est pas du JSON (page d'erreur de l'hébergeur…),
+  un **extrait du corps brut** (tags HTML retirés, 200 caractères) accompagne le statut — c'est ce message qui
+  alimente la propriété « Erreur » du rapport Discord (`reportUploadCut`).
 - `GET /api/download/{id}` — **302** `Location: <URL temporaire 1Fichier>` ; **404** inconnu ; **502** fournisseur KO
   (bouton « Télécharger » des cartes).
 - `GET /api/orphans` — `Table<Orphan>` (`{id, name, size, date}`) — fichiers 1Fichier non référencés ;

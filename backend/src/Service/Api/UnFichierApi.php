@@ -3,6 +3,7 @@
 namespace App\Service\Api;
 
 use anlutro\cURL\cURL;
+use anlutro\cURL\Response;
 use App\Service\Storage\FileStorageInterface;
 use Psr\Log\LoggerInterface;
 
@@ -78,25 +79,24 @@ class UnFichierApi implements FileStorageInterface
         $page = 1;
 
         do {
-            $infos = json_decode(
-                (new cURL())
-                    ->newJsonRequest(
-                        'post',
-                        'https://api.1fichier.com/v1/file/ls.cgi',
-                        [
-                            'folder_id' => $_ENV['API_1FICHIER_APP_FOLDER_ID'],
-                            'page' => $page,
-                            'limit' => self::LISTING_PAGE_SIZE,
-                            'pretty' => '1',
-                        ],
-                    )
-                    ->setHeader('Authorization', 'Bearer ' . $_ENV['API_1FICHIER_TOKEN'])
-                    ->send()
-                    ->body,
-            );
+            $response = (new cURL())
+                ->newJsonRequest(
+                    'post',
+                    'https://api.1fichier.com/v1/file/ls.cgi',
+                    [
+                        'folder_id' => $_ENV['API_1FICHIER_APP_FOLDER_ID'],
+                        'page' => $page,
+                        'limit' => self::LISTING_PAGE_SIZE,
+                        'pretty' => '1',
+                    ],
+                )
+                ->setHeader('Authorization', 'Bearer ' . $_ENV['API_1FICHIER_TOKEN'])
+                ->send();
+
+            $infos = json_decode((string) $response->body);
 
             if (($infos->status ?? '') !== 'OK') {
-                throw new \RuntimeException('1Fichier list failed.');
+                throw new \RuntimeException('1Fichier list failed: ' . $this->bodySnippet($response));
             }
 
             $records = $infos->items ?? [];
@@ -190,15 +190,21 @@ class UnFichierApi implements FileStorageInterface
 
     public function upload(string $path, string $mimeType, string $name): string
     {
-        $endpoint = json_decode(
-            (new cURL())
-                ->jsonPost('https://api.1fichier.com/v1/upload/get_upload_server.cgi', ['pretty' => '1'])
-                ->body,
-        );
+        $response = (new cURL())
+            ->jsonPost('https://api.1fichier.com/v1/upload/get_upload_server.cgi', ['pretty' => '1']);
+
+        $endpoint = json_decode((string) $response->body);
+
+        // 1Fichier renvoie parfois « Error 503 » en clair au lieu du JSON attendu.
+        if (!isset($endpoint->id, $endpoint->url)) {
+            throw new \RuntimeException(
+                'Upload server request failed: ' . $this->bodySnippet($response),
+            );
+        }
 
         $this->logger->debug('1Fichier ' . $name . ' upload : Got endpoint ' . $endpoint->id . ':' . $endpoint->url);
 
-        (new cURL())
+        $upload = (new cURL())
             ->newRawRequest(
                 'post',
                 'https://' . $endpoint->url . '/upload.cgi?id=' . $endpoint->id,
@@ -214,39 +220,65 @@ class UnFichierApi implements FileStorageInterface
             ->setHeader('Authorization', 'Bearer ' . $_ENV['API_1FICHIER_TOKEN'])
             ->send();
 
+        // L'accusé de réception porte la vraie cause (ex. « Error 503 ») : ne plus
+        // le jeter, le remonter tel quel.
+        if (($upload->statusCode ?? 0) >= 400 || preg_match('/Error\s*\d+/i', (string) $upload->body)) {
+            throw new \RuntimeException('File upload failed: ' . $this->bodySnippet($upload));
+        }
+
         $this->logger->debug('1Fichier ' . $name . ' upload : complete');
 
         return $this->getDownloadId($name);
+    }
+
+    /** Extrait court du corps d'une réponse 1Fichier, pour les messages d'erreur. */
+    protected function bodySnippet(Response $response): string
+    {
+        $body = trim((string) $response->body);
+
+        if ($body === '') {
+            $body = '(empty body)';
+        }
+
+        return '[' . ($response->statusCode ?? '?') . '] ' . mb_substr($body, 0, 200);
     }
 
     protected function getDownloadId($name): string
     {
         $id = '';
         $attempts = 0;
+        $lastBody = '';
 
         do {
             $attempts++;
 
             if ($attempts > self::MAX_INDEXING_ATTEMPTS) {
                 throw new \RuntimeException(
-                    'File not indexed on 1Fichier after ' . self::MAX_INDEXING_ATTEMPTS . ' attempts.',
+                    'File not indexed on 1Fichier after ' . self::MAX_INDEXING_ATTEMPTS . ' attempts.'
+                    . ' Last response: ' . mb_substr($lastBody, 0, 200),
                 );
             }
 
-            $infos = json_decode(
-                (new cURL())
-                    ->newJsonRequest(
-                        'post',
-                        'https://api.1fichier.com/v1/file/ls.cgi',
-                        [
-                            'folder_id' => $_ENV['API_1FICHIER_APP_FOLDER_ID'],
-                            'pretty' => '1'
-                        ],
-                    )
-                    ->setHeader('Authorization', 'Bearer ' . $_ENV['API_1FICHIER_TOKEN'])
-                    ->send()
-                    ->body,
-            );
+            $response = (new cURL())
+                ->newJsonRequest(
+                    'post',
+                    'https://api.1fichier.com/v1/file/ls.cgi',
+                    [
+                        'folder_id' => $_ENV['API_1FICHIER_APP_FOLDER_ID'],
+                        'pretty' => '1'
+                    ],
+                )
+                ->setHeader('Authorization', 'Bearer ' . $_ENV['API_1FICHIER_TOKEN'])
+                ->send();
+
+            $lastBody = trim((string) $response->body);
+            $infos = json_decode($lastBody);
+
+            // API en échec (ex. « Error 503 » en clair) : inutile d'épuiser les
+            // 30 tentatives, on échoue immédiatement avec la cause.
+            if (($infos->status ?? '') !== 'OK') {
+                throw new \RuntimeException('Indexing listing failed: ' . mb_substr($lastBody, 0, 200));
+            }
 
             if (!empty($infos->items)) {
                 foreach ($infos->items as $fileInfo) {
