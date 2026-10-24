@@ -245,7 +245,7 @@ export function uploadBook(book: Book, file: File, options: UploadOptions = {}):
 }
 
 // Message d'échec d'upload : l'erreur JSON du backend si présente, sinon un
-// extrait du corps brut (page 503 de l'hébergeur, erreur PHP…).
+// extrait lisible du corps brut (page 503 de l'hébergeur, erreur PHP…).
 function describeUploadFailure(status: number, data: unknown, body: string): string {
   const error = mapObject(data)?.error
 
@@ -253,12 +253,36 @@ function describeUploadFailure(status: number, data: unknown, body: string): str
     return String(error)
   }
 
-  const snippet = body
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  const snippet = htmlToSnippet(body)
 
-  return `Échec de l'envoi (${status})` + (snippet ? ` — ${snippet.slice(0, 200)}` : '')
+  return `Échec de l'envoi (${status})` + (snippet ? ` — ${truncate(snippet)}` : '')
+}
+
+// Corps d'une page d'erreur → texte lisible : scripts/styles/commentaires retirés
+// (leurs contenus polluent : code, « */--> »), entités HTML décodées
+// (&egrave; → è), espaces réduites.
+// Corps d'une page d'erreur → texte lisible : parser le HTML d'abord (le DOM
+// décode les entités : &egrave; → è), retirer scripts et styles (leurs contenus
+// polluent : code, « */--> »), puis lire le texte du <body> seul — le <title>
+// duplique souvent le premier message de la page.
+function htmlToSnippet(body: string): string {
+  const document = new DOMParser().parseFromString(body, 'text/html')
+
+  document.querySelectorAll('script, style').forEach((element) => element.remove())
+
+  const text = (document.body ?? document.documentElement)?.textContent ?? ''
+
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function truncate(text: string, max = 200): string {
+  if (text.length <= max) {
+    return text
+  }
+
+  const cut = text.lastIndexOf(' ', max)
+
+  return (cut > 0 ? text.slice(0, cut) : text.slice(0, max)) + ' …'
 }
 
 export function bookPayload(book: Book): Record<string, unknown> {

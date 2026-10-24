@@ -300,6 +300,30 @@ describe('uploadBook', () => {
     await expect(promise).rejects.toThrow('Échec de l\'envoi (503) — 503 Service Unavailable')
   })
 
+  it('nettoie l’extrait du corps : entités décodées, scripts et commentaires retirés', async () => {
+    stubXhr()
+    const { Book } = await import('@/entities/book.ts')
+    const book = new Book()
+    book.title = 'Mon livre'
+
+    const promise = uploadBook(new Book(), new File(['zip'], 'book.zip'))
+    FakeXMLHttpRequest.last!.succeed(
+      503,
+      `<html><head><title>Service inaccessible!</title>` +
+        `<style>body { color: red; }</style></head><body>` +
+        `<!-- header -->` +
+        `<script>var tracker = 1; /* maintenance */</script>` +
+        `Service inaccessible! En raison de travaux de maintenance ou de probl&egrave;mes ` +
+        `de capacit&eacute; le serveur n'est pas en mesure de r&eacute;pondre &agrave; votre requ&ecirc;te. */-->` +
+        `</body></html>`,
+    )
+
+    await expect(promise).rejects.toThrow(
+      `Échec de l'envoi (503) — Service inaccessible! En raison de travaux de maintenance ou de problèmes ` +
+        `de capacité le serveur n'est pas en mesure de répondre à votre requête. */-->`,
+    )
+  })
+
   it('lève une erreur réseau si le transfert échoue', async () => {
     stubXhr()
     const { Book } = await import('@/entities/book.ts')
