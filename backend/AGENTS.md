@@ -28,6 +28,9 @@ le frontend buildé (application « monolithe ») depuis `public/`.
 ```bash
 # Installer les dépendances
 composer install
+# ⚠️ config.platform.php épinglé sur le PHP de prod (8.5.0 — cf. Pièges connus) :
+# tout composer update résout des dépendances compatibles, et le platform_check
+# du vendor n'exige jamais plus récent que la prod (test ComposerPlatformTest).
 
 # Config locale (ne pas committer)
 cp .env .env.local
@@ -39,9 +42,11 @@ php bin/console doctrine:migrations:migrate             # (1 migration commitée
 
 # Serveur de dev
 symfony serve                                           # http://localhost:8000
-# Le fichier .php-version épingle PHP 8.4. intl requis par Book::getFilename() (Transliterator).
-# Homebrew "php" 8.4 officiel est buildé SANS intl → utiliser le tap shivammathur/php :
-#   brew install shivammathur/php/php@8.4 && brew link --overwrite --force shivammathur/php/php@8.4
+# Le fichier .php-version épingle PHP 8.5 (la prod suit, cf. Pièges connus). intl requis par
+# Book::getFilename() (Transliterator) — la formule core « php@8.5 » l'inclut :
+#   brew install php@8.5 (keg-only) — lier globalement si besoin : brew link php@8.5
+# Les cibles make passent par `symfony php` : elles suivent .php-version, indépendamment du
+# lien brew global (chaque projet sa version).
 # Uploads en local : le PHP de dev limite à memory_limit=128M / upload_max_filesize=2M / post_max_size=8M par
 # défaut, ce qui fait échouer les gros ZIP (`symfony/http-foundation` : Allowed memory size exhausted). Le PHP de
 # prod est déjà calibré, mais pas un laptop neuf. Le dossier committé `.php-local/` contient un ini de dev
@@ -292,6 +297,15 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 
 ## Pièges connus
 
+- **Épinglage plateforme composer** (`config.platform.php: 8.5.0`) : la prod est **en 8.4, à basculer en 8.5**
+  (Manager Infomaniak) — le lock est résolu pour 8.5 et le PHP web de prod doit suivre **avant** le prochain
+  déploiement. Le CLI ssh de prod est déjà plus récent que le web par le passé (d'où l'ancienne erreur
+  « Composer detected issues in your platform » : un lock résolu au-dessus du PHP web génère un
+  `vendor/composer/platform_check.php` refusant de démarrer l'app). Le pin fait que tout `composer update`
+  résout des dépendances compatibles, quel que soit le PHP local — **jamais de `--ignore-platform-reqs`**.
+  `ComposerPlatformTest` (tests backend) fait sauter la suite si le pin saute ou si un paquet du lock exige plus
+  récent ; `scripts/deploy.sh` vérifie en plus le pin contre le PHP CLI de prod avant rsync (échec rapide).
+  **Bumper le pin** uniquement quand le PHP web de prod monte (Manager Infomaniak), et jamais au-dessus.
 - Parsing Audible : regex/JSON dépendants du markup HTML, à isoler et traiter comme fragile. **Migration en cours
   chez Audible** : la recherche sert encore le markup `productListItem`, pages série et fiches sont passées aux
   composants `adbl-*` (JSON « Détails Produit ») — les parsers lisent les deux (JSON en priorité, libellés HTML

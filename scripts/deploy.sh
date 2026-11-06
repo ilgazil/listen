@@ -65,6 +65,31 @@ for opt in "${SSH_OPTS[@]}"; do SSH_CMD="$SSH_CMD $(printf '%q' "$opt")"; done
 
 echo "→ source procédure : $(git rev-parse --short HEAD) @ $PROD_HOST:$PROD_PATH"
 
+# 4bis. Cohérence PHP : le vendor (rsyncé ou réinstallé côté serveur) embarque un
+# platform_check généré depuis composer.lock. Un lock résolu avec un PHP plus
+# récent que la prod fait échouer le démarrage (« Composer detected issues in
+# your platform »). Le pin config.platform.php force la résolution à rester
+# compatible — on vérifie qu'il ne dérive pas au-dessus du PHP de prod.
+PINNED_PHP=$(php -r '$j = json_decode((string) file_get_contents("backend/composer.json"), true); echo (string) ($j["config"]["platform"]["php"] ?? "");')
+PROD_PHP_VERSION=$(ssh "${SSH_OPTS[@]}" "$SSH_DEST" "$PROD_PHP -r 'echo PHP_VERSION;'")
+
+if [ -z "$PINNED_PHP" ]; then
+  echo "⚠️  Aucun pin config.platform.php dans backend/composer.json : un composer update pourrait résoudre des dépendances incompatibles avec la prod (PHP $PROD_PHP_VERSION)."
+elif [ -z "$PROD_PHP_VERSION" ]; then
+  echo "❌ Impossible de lire la version PHP de prod (probe ssh via « $PROD_PHP »)."
+  exit 1
+elif [ "$(php -r 'echo (int) version_compare($argv[1], $argv[2], ">");' "$PINNED_PHP" "$PROD_PHP_VERSION")" = "1" ]; then
+  echo "❌ Le lock est épinglé sur PHP $PINNED_PHP, plus récent que le CLI de prod ($PROD_PHP_VERSION, via « $PROD_PHP »)."
+  echo "   Mettez à jour le PHP côté Infomaniak — le CLI ssh est indépendant du vhost : pointez PROD_PHP (.deploy.env)"
+  echo "   sur /opt/phpX.Y/bin/php — ou ré-épinglez (composer config platform.php <version de prod>)."
+  exit 1
+else
+  # Le probe mesure le CLI ssh ($PROD_PHP) : la version web/FPM du site peut différer
+  # (c'est un PHP web plus ancien que le CLI qui a produit l'erreur platform_check
+  # d'origine) — le pin doit viser la version WEB, la plus basse des deux.
+  echo "→ PHP CLI de prod : $PROD_PHP_VERSION (lock épinglé : $PINNED_PHP ✓)"
+fi
+
 # 5. Sources backend (les artefacts runtime et secrets restent sur le serveur)
 EXCLUDES=(
   --exclude '.env*'            # .env.prod + .env.prod.local du serveur, jamais écrasés

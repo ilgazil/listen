@@ -26,7 +26,7 @@ entièrement en français.
 
 ## Prérequis
 
-- PHP >= 8.2 (8.4 recommandé, cf. `backend/.php-version`) avec l'extension **intl**
+- PHP >= 8.2 (8.5 recommandé, cf. `backend/.php-version`) avec l'extension **intl**
 - Composer
 - Node.js 24 (via nvm) + npm
 - Docker (PostgreSQL local via docker compose)
@@ -99,9 +99,13 @@ Toutes les commandes passent par le `Makefile` (`make help` liste tout) :
 | `PROD_HOST` / `PROD_SSH_USER` / `PROD_PORT` | accès SSH au serveur |
 | `PROD_PATH` | chemin du vhost côté serveur |
 | `PROD_URL` | (optionnel) URL publique, affichée dans le récapitulatif de déploiement |
-| `PROD_PHP` | binaire PHP CLI du serveur (doit avoir intl) |
+| `PROD_PHP` | binaire PHP CLI du serveur (doit avoir intl) — chemin absolu recommandé : le CLI ssh est indépendant du PHP du vhost |
 | `PROD_USE_COMPOSER` | `1` = composer install sur le serveur, `0` = vendor envoyé tel quel |
 | `DEPLOY_SSH_KEY` | clé privée dédiée au déploiement |
+
+> Le lock composer est résolu pour le PHP de prod (`config.platform.php: 8.5.0` dans `backend/composer.json`).
+> Le PHP web du vhost doit être **≥ 8.5** avant de déployer (le garde-fou de `scripts/deploy.sh` compare le pin
+> au PHP CLI du serveur et échoue avant tout envoi en cas de décalage).
 
 ## API (contrat)
 

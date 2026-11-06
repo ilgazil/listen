@@ -5,11 +5,15 @@
 # Si nvm est absent, la commande tourne avec le Node système en place.
 NVM := export NVM_DIR="$$HOME/.nvm"; . "$$NVM_DIR/nvm.sh" 2>/dev/null; nvm use 24 >/dev/null 2>&1 || true
 
+# PHP backend piloté par backend/.php-version via le CLI symfony (8.5) —
+# indépendant du lien brew global (chaque projet sa version).
+PHP := symfony php
+
 help: ## Affiche cette aide et liste les commandes
 	@rg '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/  /'
 
 install: ## Installe les dépendances (backend + frontend)
-	cd backend && composer install
+	cd backend && $(PHP) $$(command -v composer) install
 	@$(NVM); cd frontend && npm install
 
 backend: ## Lance le backend Symfony (http://localhost:8000)
@@ -22,21 +26,21 @@ db-up: ## Démarre PostgreSQL local (docker compose)
 	cd backend && docker compose up -d
 
 db-create: ## Crée la base locale et applique les migrations
-	cd backend && php bin/console doctrine:database:create && php bin/console doctrine:migrations:migrate
+	cd backend && $(PHP) bin/console doctrine:database:create && $(PHP) bin/console doctrine:migrations:migrate
 
 db-migrate: ## Applique les migrations
-	cd backend && php bin/console doctrine:migrations:migrate
+	cd backend && $(PHP) bin/console doctrine:migrations:migrate
 
 test: test-backend test-frontend ## Lance tous les tests (backend + frontend)
 
 test-backend: ## Lance les tests backend (PHPUnit)
-	cd backend && php bin/phpunit
+	cd backend && $(PHP) bin/phpunit
 
 test-frontend: ## Lance les tests frontend (Vitest)
 	@$(NVM); cd frontend && npm run test
 
 lint-backend: ## Lint le backend (container + yaml)
-	cd backend && php bin/console lint:container && php bin/console lint:yaml config
+	cd backend && $(PHP) bin/console lint:container && $(PHP) bin/console lint:yaml config
 
 lint-frontend: ## Lint le frontend (eslint)
 	@$(NVM); cd frontend && npm run lint
