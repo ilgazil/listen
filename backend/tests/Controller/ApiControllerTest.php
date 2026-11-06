@@ -152,7 +152,7 @@ class ApiControllerTest extends WebTestCase
         $this->persistBook('1fichier123');
 
         $unFichier = $this->createMock(UnFichierApi::class);
-        $unFichier->method('download')->with('1fichier123')->willReturn('https://example.com/download');
+        $unFichier->expects($this->once())->method('download')->with('1fichier123')->willReturn('https://example.com/download');
         $this->client->getContainer()->set(UnFichierApi::class, $unFichier);
 
         $this->client->request('GET', '/api/download/1fichier123');
@@ -352,7 +352,7 @@ class ApiControllerTest extends WebTestCase
         $this->persistBook('empty-url-id');
 
         $unFichier = $this->createMock(UnFichierApi::class);
-        $unFichier->method('download')->with('empty-url-id')->willReturn('');
+        $unFichier->expects($this->once())->method('download')->with('empty-url-id')->willReturn('');
         $this->client->getContainer()->set(UnFichierApi::class, $unFichier);
 
         $this->client->request('GET', '/api/download/empty-url-id');
@@ -699,7 +699,7 @@ class ApiControllerTest extends WebTestCase
         $this->persistBook('keep-me');
 
         $unFichier = $this->createMock(UnFichierApi::class);
-        $unFichier->method('getOrphans')->with(['keep-me'])->willReturn([]);
+        $unFichier->expects($this->once())->method('getOrphans')->with(['keep-me'])->willReturn([]);
         $unFichier->expects(self::never())->method('remove');
         $this->client->getContainer()->set(UnFichierApi::class, $unFichier);
 

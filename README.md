@@ -5,7 +5,7 @@ Bibliothèque personnelle de livres audio : parcourez votre bibliothèque, scrap
 
 ## Description
 
-Application web full-stack composée d'un backend **Symfony 7.4 / API Platform** (PHP >= 8.2) et d'un
+Application web full-stack composée d'un backend **Symfony 8.1 / API Platform 5** (PHP >= 8.2) et d'un
 frontend **Vue 3 + Vite + TypeScript**. En production, le build du frontend est copié dans `backend/public`
 (monolithe servi par Symfony). Le thème visuel s'inspire de Diablo / Deckard Cain, l'interface est
 entièrement en français.

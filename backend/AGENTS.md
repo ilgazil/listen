@@ -8,7 +8,7 @@ le frontend buildé (application « monolithe ») depuis `public/`.
 
 ## Vue d'ensemble
 
-- **Stack** : Symfony 7.4, PHP >= 8.2, API Platform (Symfony), Doctrine ORM 3, Nelmio CORS.
+- **Stack** : Symfony 8.1, PHP >= 8.2 (floor du lock : 8.4 — dev et prod en 8.5, cf. Pièges connus), API Platform 5, Doctrine ORM 3 / DoctrineBundle 3, Nelmio CORS.
 - **Base de données** : PostgreSQL en dev (docker compose), MariaDB en prod (Infomaniak).
 - **Rôle** : 1 entité (`Book`), 2 contrôleurs (`ApiController` : upload/download 1Fichier + orphelins/intrus +
   `ScrapController` : scraping) + les routes API Platform auto-générées.
@@ -288,7 +288,7 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 - Style existant : 4 espaces, `null`/`''` pour les absences, docblocks minimalistes.
 - **Pas de formateur / analyseur statique configuré** (ni php-cs-fixer, ni phpstan, ni rector) → garder le style en place.
 - Ne pas logger les tokens/secrets (`Psr\Log\LoggerInterface` est injecté dans `UnFichierApi` pour les logs de debug).
-- Tests fonctionnels : `php bin/phpunit` (PHPUnit 12 via `phpunit.xml.dist`, `tests/bootstrap.php`). En test, certains services
+- Tests fonctionnels : `php bin/phpunit` (PHPUnit 13 via `phpunit.xml.dist`, `tests/bootstrap.php`). En test, certains services
   (`UnFichierApi`, `DiscordWebhook`, scrapers) sont **publics** via `config/services_test.yaml` pour pouvoir être mockés
   avec `TestContainer::set()` (les services privés sont inlinés dans les fabriques du container et ne peuvent pas être
   remplacés).
@@ -297,15 +297,15 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 
 ## Pièges connus
 
-- **Épinglage plateforme composer** (`config.platform.php: 8.5.0`) : la prod est **en 8.4, à basculer en 8.5**
-  (Manager Infomaniak) — le lock est résolu pour 8.5 et le PHP web de prod doit suivre **avant** le prochain
-  déploiement. Le CLI ssh de prod est déjà plus récent que le web par le passé (d'où l'ancienne erreur
-  « Composer detected issues in your platform » : un lock résolu au-dessus du PHP web génère un
-  `vendor/composer/platform_check.php` refusant de démarrer l'app). Le pin fait que tout `composer update`
-  résout des dépendances compatibles, quel que soit le PHP local — **jamais de `--ignore-platform-reqs`**.
-  `ComposerPlatformTest` (tests backend) fait sauter la suite si le pin saute ou si un paquet du lock exige plus
-  récent ; `scripts/deploy.sh` vérifie en plus le pin contre le PHP CLI de prod avant rsync (échec rapide).
-  **Bumper le pin** uniquement quand le PHP web de prod monte (Manager Infomaniak), et jamais au-dessus.
+- **Épinglage plateforme composer** (`config.platform.php: 8.5.0`) : la prod est en **8.5** (vhost basculé dans le
+  Manager ; le CLI ssh suit le PATH, réglé séparément — `PROD_PHP=/opt/php8.5/bin/php` dans `.deploy.env` vise le
+  binaire directement, car le PATH ssh peut traîner sur une ancienne version). Le pin force la résolution à rester
+  compatible prod, quel que soit le PHP local — **jamais de `--ignore-platform-reqs`** : un lock résolu au-dessus du
+  PHP web génère un `vendor/composer/platform_check.php` refusant de démarrer l'app (« Composer detected issues in
+  your platform » — l'erreur d'origine de ce pin). `ComposerPlatformTest` (tests backend) fait sauter la suite si le
+  pin saute ou si un paquet du lock exige plus récent ; `scripts/deploy.sh` vérifie en plus le pin contre le PHP CLI
+  de prod avant rsync (échec rapide). **Bumper le pin** uniquement quand le PHP web de prod monte (Manager
+  Infomaniak), et jamais au-dessus.
 - Parsing Audible : regex/JSON dépendants du markup HTML, à isoler et traiter comme fragile. **Migration en cours
   chez Audible** : la recherche sert encore le markup `productListItem`, pages série et fiches sont passées aux
   composants `adbl-*` (JSON « Détails Produit ») — les parsers lisent les deux (JSON en priorité, libellés HTML
