@@ -10,6 +10,7 @@ class AudibleSearchParserTest extends TestCase
     private const string FIXTURE = __DIR__ . '/../../../Fixtures/audible-search.html';
     private const string SERIES_FIXTURE = __DIR__ . '/../../../Fixtures/audible-series.html';
     private const string BOURBON_FIXTURE = __DIR__ . '/../../../Fixtures/audible-bourbon-search.html';
+    private const string TOWERS_SERIES_FIXTURE = __DIR__ . '/../../../Fixtures/audible-series-towers.html';
 
     public function testSagaFromSubtitleWithCommaTome(): void
     {
@@ -208,6 +209,96 @@ class AudibleSearchParserTest extends TestCase
         $parser = new AudibleSearchParser('<li class="productListItem">x</li>');
 
         self::assertSame([], $parser->getSeriesUrls());
+    }
+
+    /**
+     * Rangée « adbl-product-row » du markup actuel (page série) : JSON « Détails
+     * Produit » (contributions, durée, note) + bloc titre h3/h4 « slot ».
+     */
+    private function row(string $title, string $subtitle, string $asin, string $json): string
+    {
+        return <<<HTML
+<adbl-product-row variant="catalog" series-header="Volume 1 de la série" placement="base">
+  <a href="/pd/Livre-Audio/$asin" slot="image">
+    <adbl-product-image><img src="https://m.media-amazon.com/images/I/couv._SL240_.jpg" alt="Couverture" /></adbl-product-image>
+  </a>
+  <h3 slot="title"><a href="/pd/Livre-Audio/$asin">$title</a></h3>
+  <h4 slot="subtitle">$subtitle</h4>
+  <adbl-sample-button variant="simple" placement="list" size="sm" label="Aperçu" data-asin="$asin" icon="play"></adbl-sample-button>
+  <div slot="buy-box">
+    <adbl-product-metadata slot="metadata" aria-label="Détails Produit">
+      <script type="application/json">$json</script>
+    </adbl-product-metadata>
+  </div>
+</adbl-product-row>
+HTML;
+    }
+
+    public function testParsesSeriesRowFromCurrentMarkup(): void
+    {
+        $json = <<<'JSON'
+{"authors":[{"name":"J. R. R. Tolkien"}],"narrators":[{"name":"Thierry Janssen"}],"duration":"20 h et 52 min","language":"Français","rating":{"value":4.8,"count":4631}}
+JSON;
+
+        $parser = new AudibleSearchParser(
+            $this->row('La fraternité de l&#039;anneau', 'Le seigneur des anneaux 1', 'B0791DND3Z', $json),
+        );
+
+        $book = $parser->createBook();
+
+        self::assertSame('B0791DND3Z', $book->getScrapId());
+        self::assertSame('La fraternité de l\'anneau', $book->getTitle());
+        self::assertSame('Le seigneur des anneaux', $book->getSaga());
+        self::assertSame('1', $book->getTome());
+        self::assertSame('J. R. R. Tolkien', $book->getAuthor());
+        self::assertSame(['Thierry Janssen'], $book->getNarrators());
+        self::assertSame('20:52', $book->getRuntime());
+        self::assertSame(4.8, $book->getRatings());
+
+        // Vignette SL240 réécrite en 500 px.
+        self::assertSame('https://m.media-amazon.com/images/I/couv._SL500_.jpg', $book->getCover());
+    }
+
+    public function testSplitsMultipleRowsFromCurrentMarkup(): void
+    {
+        $rowOne = $this->row('Livre un', 'Saga essai 1', 'B000000001', '{"narrators":[{"name":"N1"}]}');
+        $rowTwo = $this->row('Livre deux', 'Saga essai 2', 'B000000002', '{"narrators":[{"name":"N2"}]}');
+
+        $parser = new AudibleSearchParser('<div class="adbl-impression-container" data-widget="productList">' . $rowOne . $rowTwo . '</div>');
+
+        $books = $parser->getBooks();
+
+        self::assertCount(2, $books);
+        self::assertSame('Livre un', $books[0]->getTitle());
+        self::assertSame('B000000001', $books[0]->getScrapId());
+        self::assertSame('Livre deux', $books[1]->getTitle());
+        self::assertSame('B000000002', $books[1]->getScrapId());
+    }
+
+    public function testParsesSeriesFixtureWithCurrentMarkup(): void
+    {
+        if (!is_file(self::TOWERS_SERIES_FIXTURE)) {
+            self::markTestSkipped('fixture audible-series-towers.html non présente (gitignorée).');
+        }
+
+        $parser = new AudibleSearchParser((string) file_get_contents(self::TOWERS_SERIES_FIXTURE));
+
+        // La page série liste la saga complète : le filtrage narrateur est désactivé.
+        $books = $parser->getBooks(false);
+
+        self::assertCount(3, $books);
+        self::assertSame(['1', '2', '3'], array_map(fn ($book) => $book->getTome(), $books));
+        self::assertSame('B0791DND3Z', $books[0]->getScrapId());
+
+        $towers = $books[1];
+
+        self::assertSame('Les deux tours', $towers->getTitle());
+        self::assertSame('Le seigneur des anneaux', $towers->getSaga());
+        self::assertSame('J. R. R. Tolkien', $towers->getAuthor());
+        self::assertSame(['Thierry Janssen'], $towers->getNarrators());
+        self::assertSame('18:09', $towers->getRuntime());
+        self::assertSame(4.9, $towers->getRatings());
+        self::assertStringContainsString('_SL500_', $towers->getCover());
     }
 
     private function fragment(string $subtitle = '', string $series = '', string $seriesRest = '', string $rating = ''): string

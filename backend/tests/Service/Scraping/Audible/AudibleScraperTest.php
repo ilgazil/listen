@@ -11,6 +11,8 @@ class AudibleScraperTest extends TestCase
     private const string SEARCH_FIXTURE = __DIR__ . '/../../../Fixtures/audible-bourbon-search.html';
     private const string SERIES_FIXTURE = __DIR__ . '/../../../Fixtures/audible-series.html';
     private const string SCARLETT_FIXTURE = __DIR__ . '/../../../Fixtures/audible-search.html';
+    private const string BOOK_FIXTURE = __DIR__ . '/../../../Fixtures/audible-book.html';
+    private const string TOWERS_SERIES_FIXTURE = __DIR__ . '/../../../Fixtures/audible-series-towers.html';
 
     public function testSearchEnrichesIncompleteSeriesFromSeriesPage(): void
     {
@@ -253,6 +255,83 @@ class AudibleScraperTest extends TestCase
         ($make())->search('bourbon kid');
 
         // Deux recherches successives : la page série n'est demandée qu'une fois.
+        self::assertSame(1, $seriesCalls);
+
+        array_map(unlink(...), glob($cacheDir . '/*') ?: []);
+        @rmdir($cacheDir);
+    }
+
+    public function testGetParsesCurrentBookPage(): void
+    {
+        if (!is_file(self::BOOK_FIXTURE)) {
+            self::markTestSkipped('fixture audible-book.html non présente (gitignorée).');
+        }
+
+        $scraper = $this->scraper(fn (string $url): string => (string) file_get_contents(self::BOOK_FIXTURE));
+
+        $book = $scraper->get('B01M2WSG6T');
+
+        self::assertNotNull($book);
+        self::assertSame("L'apprenti assassin", $book->getTitle());
+        self::assertSame('Robin Hobb', $book->getAuthor());
+        self::assertSame(['Sylvain Agaësse'], $book->getNarrators());
+        self::assertSame('17:48', $book->getRuntime());
+        self::assertSame(4.8, $book->getRatings());
+        self::assertSame("L'Assassin Royal", $book->getSaga());
+        self::assertSame('1', $book->getTome());
+        self::assertSame('B01M2WSG6T', $book->getScrapId());
+    }
+
+    public function testGetReturnsNullOnSmallErrorPage(): void
+    {
+        // Mur 503 (~2 Ko) épuisé après retries : jamais de livre fantôme à partir
+        // d'une page d'erreur (le re-scrap CLI proposerait d'écraser les champs).
+        $errorPage = '<html><body>Service Unavailable</body></html>';
+
+        $scraper = $this->scraper(fn (): string => $errorPage);
+
+        self::assertNull($scraper->get('B01M2WSG6T'));
+    }
+
+    public function testGetReturnsNullOnUnavailableTitlePage(): void
+    {
+        // Page « titre indisponible » (livre retiré du catalogue) : une vraie page,
+        // grande, mais sans ASIN canonique ni data-asin → pas un livre.
+        $page = '<html><body><h1 slot="title">Désolés ! Ce titre n&#39;est pas disponible.</h1>'
+            . str_repeat('x', 20000)
+            . '</body></html>';
+
+        $scraper = $this->scraper(fn (): string => $page);
+
+        self::assertNull($scraper->get('B000000000'));
+    }
+
+    public function testSeriesPageWithCurrentMarkupIsCachedForTheDay(): void
+    {
+        if (!is_file(self::SEARCH_FIXTURE) || !is_file(self::TOWERS_SERIES_FIXTURE)) {
+            self::markTestSkipped('fixtures audible-bourbon-search.html / audible-series-towers.html non présentes (gitignorées).');
+        }
+
+        // Les pages série au markup actuel (rangées adbl-product-row) sont mises en
+        // cache comme les anciennes.
+        $cacheDir = sys_get_temp_dir() . '/audible-series-cache-' . uniqid();
+        $seriesCalls = 0;
+
+        $make = function () use ($cacheDir, &$seriesCalls) {
+            return $this->scraper(function (string $url) use (&$seriesCalls): string {
+                if (str_contains($url, '/series/')) {
+                    $seriesCalls++;
+
+                    return (string) file_get_contents(self::TOWERS_SERIES_FIXTURE);
+                }
+
+                return (string) file_get_contents(self::SEARCH_FIXTURE);
+            }, $cacheDir);
+        };
+
+        ($make())->search('bourbon kid');
+        ($make())->search('bourbon kid');
+
         self::assertSame(1, $seriesCalls);
 
         array_map(unlink(...), glob($cacheDir . '/*') ?: []);

@@ -151,8 +151,9 @@ class AudibleScraper implements ScraperInterface
         );
 
         // La page obtenue est mise en cache ; une page d'erreur (503 épuisée) ne
-        // l'est pas — la prochaine recherche retentera.
-        if (str_contains($html, 'productListItem')) {
+        // l'est pas — la prochaine recherche retentera. Le markup actuel des pages
+        // série n'utilise plus productListItem (rangées adbl-product-row).
+        if (str_contains($html, 'productListItem') || str_contains($html, 'adbl-product-row')) {
             $this->seriesCache->set($seriesId, $html);
         }
 
@@ -208,13 +209,30 @@ class AudibleScraper implements ScraperInterface
 
     public function get(string $code): Book|null
     {
-        $body = $this->fetch($this->endpoint . 'pd/Book/' . $code);
+        // Retries comme pour les pages série : la fiche reçoit elle aussi la 503
+        // anti rate-limiting (page d'erreur ~2 Ko, sans status HTTP d'échec côté
+        // cURL). Une page trop petite est un mur, pas une fiche : parser la page
+        // d'erreur produirait un livre vide (effacement des champs au re-scrap).
+        $body = $this->fetchWithRetry(
+            $this->endpoint . 'pd/Book/' . $code,
+            self::MAX_SERIES_ATTEMPTS,
+            self::SERIES_RETRY_DELAY,
+        );
 
-        if (empty($body)) {
+        if (strlen($body) <= self::MIN_REAL_PAGE_BYTES) {
             return null;
         }
 
-        return (new AudibleBookParser($body))->createBook();
+        $book = (new AudibleBookParser($body))->createBook();
+
+        // Page « titre indisponible » (livre retiré du catalogue) : ni URL canonique
+        // ni data-asin — pas un livre, sinon le re-scrap proposerait d'écraser les
+        // champs du livre par le contenu de la page d'erreur.
+        if ($book->getScrapId() === '') {
+            return null;
+        }
+
+        return $book;
     }
 
     protected function fetch(string $url): string

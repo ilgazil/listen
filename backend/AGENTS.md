@@ -170,14 +170,29 @@ src/
 
 ### Scraping
 - `ScraperInterface` : `search(string): array`, `get(string): ?Book`.
-- **Audible** (`AudibleScraper`) : `Fetcher::get` sur `audible.fr` + **parsing regex du HTML** (`AudibleSearchParser`,
-  `AudibleBookParser`). Extrait : id, cover, title, saga/tome (`computeSagaMetadata()`), author, narrators, runtime, ratings.
-  Le parsing est fragile par nature (dépend du markup Audible). Titre/ASIN extraits de l'`aria-label` /
-  `product-list-item-` du bloc (le rendu `<h3>` varie selon les fiches).
+- **Audible** (`AudibleScraper`) : `Fetcher::get` sur `audible.fr` + **parsing regex/JSON du HTML**
+  (`AudibleSearchParser`, `AudibleBookParser`). Extrait : id, cover, title, saga/tome (`computeSagaMetadata()`),
+  author, narrators, runtime, ratings. Le parsing est fragile par nature (dépend du markup Audible).
+  **Double markup** : Audible migre ses pages vers des composants `adbl-*` — la **recherche** utilise encore les
+  blocs `productListItem` (libellés HTML), les **pages série** et la **fiche produit** servent le markup actuel
+  (rangées `adbl-product-row`, bloc titre h1/h2 « slot », JSON `<script type="application/json">` « Détails
+  Produit » : auteurs, narrateurs, durée, note, série). Les parsers lisent le JSON structuré **en priorité** et
+  retombent sur les libellés HTML historiques (blocs productListItem) — les pages migration à cheval restent
+  lisibles. `getBooks()` découpe soit les blocs `productListItem`, soit les rangées `adbl-product-row`.
+  **Couverture** : image produit (rangée/fiche) sinon image historique — la vignette est réécrite en 500 px
+  (miniatures SL63/SL240 servies par les pages actuelles).
+  Titre/ASIN extraits de l'`aria-label` / `product-list-item-` du bloc (le rendu `<h3>` varie selon les fiches) ;
+  sur le markup actuel : attribut `data-asin` (rangée) / URL canonique (fiche).
   **Relaxation** : la recherche Audible est un ET strict sur tous les mots — si le pattern (3+ mots) donne 0
   résultat, on réessaie sans le premier mot (auteur en tête des noms de fichiers), puis sur la queue du titre
   (2 derniers mots). Page de recherche avec retries 503 (`MAX_SEARCH_ATTEMPTS`), détection de la page d'erreur à
   sa taille (`MIN_REAL_PAGE_BYTES`).
+  **Fiche** (`AudibleBookParser` + `AudibleScraper::get()`) : la fiche complète est conservée (bloc titre, image
+  produit, JSON hors du bloc héro) ; le titre vient du `<h1>` « slot », la saga/tome du sous-titre h2 complété par
+  le JSON (nom de série fiable quand le sous-titre est descriptif, ex. « A Full-Cast BBC Radio Dramatisation ») ;
+  l'ASIN vient de l'URL canonique. `get()` fetch avec **retries** (mur 503) et rejette : les pages trop petites
+  (mur épuisé) et les pages « titre indisponible » (aucun ASIN canonique) → `null`, jamais de livre fantôme à
+  partir d'une page d'erreur.
   **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche dans un des deux sens** (score
   ≥ `MIN_SERIES_SCORE` : tous les mots du pattern dans le nom, ou le nom de la saga contenu dans la recherche)
   a un lien « Série : … » dans les résultats, sa page série est scrapée (elle liste la saga complète — même si un
@@ -185,7 +200,7 @@ src/
   pages (`getBooks(false)`), max 2 pages par recherche (`MAX_SERIES_ENRICHMENTS`). Page série demandée avec
   **retries** (Audible renvoie souvent une 503 anti rate-limiting, sans status HTTP d'échec côté cURL : on
   détecte la page d'erreur à sa taille) et **cache quotidien** (`AudibleSeriesCache`, dossier
-  `public/cache/audible`). Échec = résultats de la recherche seule.
+  `public/cache/audible`, les deux markups sont mis en cache). Échec = résultats de la recherche seule.
 - **Lizzie** (`LizzieScraper`) : utilise `LizzieCache` — un JSON du catalogue (`lizzie-api.staytuned.io/v1/catalog`)
   mis en cache **une fois par jour** dans `public/cache/lizzie/cache_YYYY-MM-DD.json`. Extrait : title, author, cover,
   runtime, narrators (un seul champ). Pas de ratings ni saga/tome.
@@ -277,7 +292,11 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 
 ## Pièges connus
 
-- Parsing Audible : regex dépendantes du markup HTML, à isoler et traiter comme fragile.
+- Parsing Audible : regex/JSON dépendants du markup HTML, à isoler et traiter comme fragile. **Migration en cours
+  chez Audible** : la recherche sert encore le markup `productListItem`, pages série et fiches sont passées aux
+  composants `adbl-*` (JSON « Détails Produit ») — les parsers lisent les deux (JSON en priorité, libellés HTML
+  en recours). Si la page de recherche migre à son tour, c'est `AudibleSearchParser::getBooks()` + les getters
+  (title/author/narrators/runtime/ratings sur les blocs item) qu'il faudra étendre.
 - `UnFichierApi::upload()` est **bloquant** (polling 1s jusqu'à indexation du fichier) → envisager Messenger/async
   si la file d'envoi doit traiter plusieurs livres.
 - `UnFichierApi::getDownloadId()` est **borné** (`MAX_INDEXING_ATTEMPTS` essais max, cf. `backend/SPECS.md` § 6)
