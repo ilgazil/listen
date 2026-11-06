@@ -66,7 +66,8 @@ backend local (sans proxy), renseigne la conf locale : `echo "VITE_API_BASE_URL=
 - **Politique « min age »** : `.npmrc` impose `min-release-age=5` (jours) — aucune dépendance publiée il y a moins de
   5 jours n'est installée/upgradée (`npm install`, `npm update`). `npx npm-check-updates` lit le même `.npmrc`
   (`--cooldown 5` implicite) pour monter aux dernières versions éligibles. Bypass ponctuel :
-  `npm install <pkg>@<version> --min-release-age=0`.
+  `npm install <pkg>@<version> --min-release-age=0`. **Garde-fou** : `src/npmrc.spec.ts` fait sauter la suite si la
+  politique saute du `.npmrc` (miroir du `ComposerPlatformTest` backend).
 - **`npm-check-updates`** (`npx npm-check-updates -u` puis `npm install`) est utilisé pour les montées majeures.
   Toute mise à jour doit repasser `npm run type-check`, `npm run lint`, `npm run build`, `npm run test` ; ré-épingler
   un paquet qui casse (ex. `typescript@7` reste bloqué à `^6` car `vue-tsc` dépend du chemin interne `./lib/tsc`).
