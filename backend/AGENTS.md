@@ -31,6 +31,10 @@ composer install
 # ⚠️ config.platform.php épinglé sur le PHP de prod (8.5.0 — cf. Pièges connus) :
 # tout composer update résout des dépendances compatibles, et le platform_check
 # du vendor n'exige jamais plus récent que la prod (test ComposerPlatformTest).
+# Politique « min age » : config.policy.cooldown.period = 5 jours — les versions
+# publiées depuis moins de 5 jours sont ignorées à la résolution (miroir du
+# min-release-age du frontend/.npmrc ; Composer >= 2.11 requis). Bypass ponctuel :
+# composer update --no-cooldown.
 
 # Config locale (ne pas committer)
 cp .env .env.local

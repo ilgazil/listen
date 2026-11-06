@@ -67,6 +67,17 @@ class ComposerPlatformTest extends TestCase
         );
     }
 
+    public function testCooldownPolicyWithholdsFreshReleases(): void
+    {
+        $cooldown = $this->composerJson()['config']['policy']['cooldown'] ?? [];
+
+        self::assertArrayHasKey(
+            'period',
+            $cooldown,
+            'La politique cooldown a disparu de composer.json : un composer update réinstallerait des versions publiées depuis quelques heures (risque supply chain — miroir du min-release-age du frontend/.npmrc). Rétablir config.policy.cooldown.period (« 5 days », Composer >= 2.11).',
+        );
+    }
+
     private function pinnedPhp(): string
     {
         $config = $this->composerJson();

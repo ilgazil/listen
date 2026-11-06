@@ -58,6 +58,11 @@
         "sort-packages": true,
         "platform": {
             "php": "8.5.0"
+        },
+        "policy": {
+            "cooldown": {
+                "period": "5 days"
+            }
         }
     },
     "autoload": {
