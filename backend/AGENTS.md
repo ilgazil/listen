@@ -152,6 +152,17 @@ src/
 ### Commandes CLI
 - `app:scrap-book <ids...>` — re-scrape un livre depuis son scraper (Audible/Lizzie), propose les champs modifiés (confirmation interactive).
 - `app:batch` — nettoyage en lot (ex. normalisation de `tome` : extrait `[\d.]+`).
+- `app:migrate-1fichier --new-token=<clé> --new-folder-name=listen` — migration **one-shot** du stockage vers un
+  autre compte 1Fichier : chaque fichier du dossier `API_1FICHIER_APP_FOLDER_ID` (compte source, **lecture seule**)
+  est téléchargé puis ré-uploade sur le nouveau compte, et les `Book.id` sont mis à jour en base (le hash d'accès
+  change). Destination obligatoire : `--new-folder-name=<nom>` (dossier créé à la **racine** du nouveau compte,
+  réutilisé s'il existe déjà — l'id résolu est **restitué en fin de traitement** pour la bascule) ou
+  `--new-folder=<id>` (dossier existant). `--yes` sans confirmation (sinon clé demandée interactivement +
+  confirmation). Reprise sûre et idempotente : les fichiers déjà présents sur la destination (même nom + taille)
+  sont **sautés et leurs livres remappés** en base — en cas d'échec, corriger et relancer (aucun ré-upload).
+  Après migration : basculer `API_1FICHIER_TOKEN` + `API_1FICHIER_APP_FOLDER_ID`
+  dans `.env.local`, puis vérifier `/api/orphans` et `/api/intruders`. La clé du nouveau compte n'est **jamais**
+  stockée ni loggée.
 
 ---
 
@@ -283,3 +294,7 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
 - `tests/Fixtures/audible-search.html` (échantillon de la page de recherche Audible) est **gitignoré**
   (`/tests/Fixtures/*.html`) ; le test d'intégration `AudibleSearchParserTest::testParsesFixture()` se
   `markTestSkipped()` s'il est absent.
+- 1Fichier : l'indexation d'un upload fraîchement envoyé est **lente** et le listing d'un dossier est servi avec
+  du retard — `app:migrate-1fichier` tire donc le hash du fichier migré depuis **l'accusé de réception d'upload**
+  et ne sonde le listing qu'en dernier recours (toutes les 30 s, ~10 min max ; sonder plus vite ne renvoie que
+  des listings périmés).
