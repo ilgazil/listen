@@ -310,6 +310,12 @@ Variables attendues (noms uniquement — **ne jamais committer de valeurs** ; `.
   pin saute ou si un paquet du lock exige plus récent ; `scripts/deploy.sh` vérifie en plus le pin contre le PHP CLI
   de prod avant rsync (échec rapide). **Bumper le pin** uniquement quand le PHP web de prod monte (Manager
   Infomaniak), et jamais au-dessus.
+- **Nouvelle variable d'environnement = intervention serveur** : `.env*` est **exclu du rsync**
+  (`--exclude '.env*'`) — la prod charge ses variables via `.env.local.php` (dotenv compilé, à éditer
+  à la main pour toute nouvelle var, cf. incidents `DATABASE_URL` et `DEFAULT_URI`). Toute var référencée
+  en config (`%env(...)%`) sans valeur côté serveur fait échouer `cache:clear` — et donc `make deploy`,
+  qui l'exécute en dernière étape, après l'envoi des fichiers. Le `default_uri` de la recipe routing a
+  été re-commenté pour cette raison (l'app tire ses URLs de la requête / `APP_BASE_URL`).
 - Parsing Audible : regex/JSON dépendants du markup HTML, à isoler et traiter comme fragile. **Migration en cours
   chez Audible** : la recherche sert encore le markup `productListItem`, pages série et fiches sont passées aux
   composants `adbl-*` (JSON « Détails Produit ») — les parsers lisent les deux (JSON en priorité, libellés HTML
