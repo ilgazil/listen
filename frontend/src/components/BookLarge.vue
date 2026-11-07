@@ -7,10 +7,25 @@ import SectionRuntime from '@/components/SectionRuntime.vue'
 import SectionSaga from '@/components/SectionSaga.vue'
 import IconEdit from '@/components/icons/IconEdit.vue'
 import CoverImage from '@/components/CoverImage.vue'
+import { useRouter } from 'vue-router'
 
-const { book } = defineProps({
+// linkTags=false (preview du formulaire) : la pastille reste informative —
+// tooltip au survol de la pastille seule, tags non cliquables.
+const { book, linkTags = true } = defineProps({
   book: Book,
+  linkTags: { type: Boolean, default: true },
 })
+
+const router = useRouter()
+
+function goToTag(tag: string): void {
+  if (!linkTags || !router) {
+    return
+  }
+
+  // Retour à l'index avec le filtre tag actif (?tag=…).
+  void router.push({ name: 'home', query: { tag } })
+}
 </script>
 
 <template>
@@ -18,6 +33,22 @@ const { book } = defineProps({
     <h2>
       <span class="truncate">{{ book.title }}</span>
       <SectionRatings :ratings="book.ratings" class="ratings" />
+
+      <span v-if="book.tags.length" class="tags" :class="{ link: linkTags }">
+        {{ book.tags.length }} tag{{ book.tags.length > 1 ? 's' : '' }}
+
+        <span class="tooltip">
+          <button
+            v-for="tag of book.tags"
+            v-bind:key="tag"
+            type="button"
+            class="tag"
+            @click="goToTag(tag)"
+          >
+            {{ tag }}
+          </button>
+        </span>
+      </span>
     </h2>
 
     <div class="book-core">
@@ -101,6 +132,88 @@ article {
       flex: none;
       font-size: 0.9rem;
       color: var(--color-amber);
+    }
+
+    /* Pastille « N tag(s) » : les tags sont listés dans le panneau au survol.
+       Les sélecteurs de classe passent outre le `h2 span` générique
+       (flex-grow/padding/text-align) — tout est réétabli explicitement. */
+    .tags {
+      position: relative;
+      display: inline-block;
+      flex: none;
+      margin-left: 0.375rem;
+      padding: 0.125rem 0.5rem;
+      font-size: 0.75rem;
+      color: var(--color-amber);
+      border: 1px solid var(--color-amber);
+      border-radius: 999px;
+      white-space: nowrap;
+
+      .tooltip {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        max-width: 16rem;
+        padding: 0.25rem 0.375rem;
+        background-color: var(--color-background-mute);
+        border: 1px solid var(--color-amber);
+        border-radius: 4px;
+        z-index: 20;
+        text-align: left;
+        visibility: hidden;
+        opacity: 0;
+        transition:
+          opacity 0.15s,
+          visibility 0.15s;
+        pointer-events: none;
+
+        /* Pont invisible reliant pastille et panneau : en variante lien, le
+           survol ne coupe pas dans les 4 px d'écart quand on descend vers les
+           tags (inerte sinon — pointer-events: none hérité). */
+        &::before {
+          content: '';
+          position: absolute;
+          top: -4px;
+          left: 0;
+          right: 0;
+          height: 4px;
+        }
+
+        .tag {
+          flex: none;
+          padding: 0.125rem 0.375rem;
+          text-align: left;
+          color: var(--color-text);
+          font-size: inherit;
+          background: none;
+          border: none;
+          cursor: default;
+          overflow-wrap: anywhere;
+        }
+      }
+
+      &:hover .tooltip {
+        visibility: visible;
+        opacity: 1;
+      }
+    }
+
+    /* Fiche de bibliothèque (link-tags) : les tags du panneau sont cliquables
+       et renvoient vers l'index filtré — petit glow au survol, et le panneau
+       est survolable sans se refermer (pont + pointer-events). */
+    .tags.link .tooltip {
+      pointer-events: auto;
+
+      .tag {
+        cursor: pointer;
+
+        &:hover {
+          color: var(--color-amber-lighter);
+          text-shadow: 0 0 8px var(--color-amber-light);
+        }
+      }
     }
   }
 

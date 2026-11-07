@@ -9,6 +9,7 @@ use App\Service\Scraping\SearchRanker;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Serializer\SerializerInterface;
 use Throwable;
@@ -52,6 +53,32 @@ class ScrapController
                 'api_platform_disable' => true,
             ]),
         );
+    }
+
+    #[Route('/api/scrap/tags', name: 'api_scrap_tags', methods: ['GET'])]
+    public function tags(Request $request, AudibleScraper $audible, LoggerInterface $logger): JsonResponse
+    {
+        $scraper = (string) $request->query->get('scraper');
+        $scrapId = trim((string) $request->query->get('scrap_id'));
+
+        // Les tags n'existent que sur la fiche Audible (Lizzie n'en expose pas).
+        if ($scraper !== AudibleScraper::$NAME || $scrapId === '') {
+            return new JsonResponse(['error' => 'Unknown scraper or missing scrap_id.'], Response::HTTP_BAD_REQUEST);
+        }
+
+        try {
+            return new JsonResponse(['tags' => $audible->tags($scrapId)]);
+        } catch (Throwable $exception) {
+            $logger->error('Échec du scrap des tags', [
+                'scraper' => AudibleScraper::class,
+                'scrap_id' => $scrapId,
+                'error' => $exception->getMessage(),
+            ]);
+
+            // Un échec (réseau, anti-bot…) renvoie une liste vide : le champ reste
+            // éditable à la main côté frontend.
+            return new JsonResponse(['tags' => []]);
+        }
     }
 
     /**

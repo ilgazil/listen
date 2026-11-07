@@ -44,11 +44,29 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
   **défini au niveau de `App.vue`** : visible sur toutes les routes sauf `/add` (le formulaire y est déjà), donc
   aussi sur saga, édition, orphelins, intrus — **masqué quand la file d'envoi est visible** (il passerait par
   dessus le panneau ; le panneau propose alors un bouton « Ajouter » dans sa barre d'actions, cf. § 3.4).
-  Un **input de recherche** à côté du toggle filtre en direct (`bookStore` / helpers `bookMatches` /
-  `workMatches` dans `entities/book.ts`) sur : titre, nom de saga, auteur ou narrateur — **insensible
-  à la casse et aux accents**, tous les mots du terme doivent matcher (`Aucun résultat` si vide).
-  Recherche et mode sont **persistés dans l'URL** (`/?q=…&mode=books`, écriture en `router.replace` pour ne pas
-  polluer l'historique — cf. § 3.8) : retour, liens et rechargement les restaurent.
+  Un **input de recherche** à côté du toggle (**rayon 4 px** comme les champs du formulaire) filtre en direct
+  (`bookStore` / helpers `bookMatches` / `workMatches` dans `entities/book.ts`) sur : titre, nom de saga, auteur ou
+  narrateur — **insensible à la casse et aux accents**, tous les mots du terme doivent matcher (`Aucun résultat` si
+  vide). Recherche, mode et tag sont **persistés dans l'URL** (`/?q=…&mode=books&tag=…`, écriture en `router.replace`
+  pour ne pas polluer l'historique — cf. § 3.8) : retour, liens et rechargement les restaurent.
+  - **Menu de suggestions** (`helpers/suggestions.ts`) : à la saisie, un menu déroulant regroupe jusqu'à
+    **5 titres**, **5 sagas**, **5 auteurs** et **5 narrateurs** qui matchent. Navigation clavier
+    (↑/↓ + Entrée, surlignage de l'item actif, Échap), fermeture différée au blur et `mousedown.prevent` — pattern
+    du sélecteur de saga. Choisir un titre, un auteur ou un narrateur remplit la recherche ; choisir une **saga
+    ouvre sa page** — la recherche est alors **réinitialisée** (l'entrée accueil de l'historique est réécrite sans
+    `q`) mais le **filtre de tag est conservé**. Un bouton `×` (croix, à droite du champ) efface la recherche.
+  - **Filtre par tag** (`helpers/tags.ts`) : un **input dédié à droite** de la recherche, **identique visuellement**
+    (même `type="search"`, mêmes styles, même lueur au survol/focus ; largeur plus faible) — la saisie n'y filtre
+    **pas** automatiquement : un menu déroulant propose jusqu'à **5 tags** qui
+    matchent (triés par popularité, `collectTags`), mais le filtre ne s'applique qu'à la **validation** —
+    `Entrée` avec le texte saisi (appliqué tel quel — le filtrage est une égalité sans casse ni accents) ou clic
+    sur une suggestion (appliquée immédiatement). À la validation, l'input **s'efface au profit d'une chip**
+    (pill ambre, même style que les chips de tags du formulaire) ; la croix de la chip retire le filtre et
+    **fait revenir l'input** (focus remis). Le filtre se **compose avec la recherche** (ET) ; `?tag=Nom du tag`
+    est persisté dans l'URL comme `?q=`/`?mode=` (l'input se resynchronise sur les navigations). Un livre est
+    affiché s'il porte le tag (`hasTag`) ; une saga est affichée dès qu'**au moins un** de ses livres le porte
+    (`workHasTag`) — et la vignette montre alors **tous** ses livres, indépendamment du tag (l'expansion reste le
+    comportement des vignettes). Les livres isolés (ou saga à 1 livre) suivent la même règle via leur livre.
   - Mode **Sagas** : une vignette `SagaTile` par saga de **2+ livres** — titre en `<h2>` comme les cartes livre,
     layout `book-core` : **carré 2×2 de couvertures** dans la colonne gauche (à l'emplacement de la couverture,
     4e case = couverture du 4e livre estompée + « +N » si plus de 4 livres),
@@ -59,8 +77,13 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
     à droite ; la vignette elle-même **n'est pas cliquable** — seul « Voir les livres » pointe vers `/saga/:id` —
     et cartes `BookLarge` pour les livres « normaux » (sans saga, ou saga à un seul livre).
     **Tri alphabétique** sur le nom de saga, sinon sur le titre du livre (`bookStore.works`).
-  - Mode **Livres** : grille de toutes les cartes `BookLarge` (tri alphabétique titre) ; actions par carte :
-    « Télécharger » (`LinkDownload`) et lien source Audible/Lizzie (`LinkScrapper`).
+  - Mode **Livres** : grille de toutes les cartes `BookLarge` (tri alphabétique titre) ; **pastille « N tag(s) »**
+    (singulier/pluriel, masquée sans tags) à côté de la note dans l'en-tête — au survol, un panneau liste les tags
+    verticalement (fond `--color-background-mute`, bordure ambre). **Clic sur un tag → retour à l'index filtré**
+    (`/?tag=…`, glow au survol ; pont invisible pastille → panneau pour ne pas perdre le hover). **Preview du
+    formulaire : panneau inerte** (`pointer-events: none`, non cliquable, affiché au survol de la pastille seule).
+    Présente sur toute fiche `BookLarge` (bibliothèque, isolés d'une saga, preview du formulaire) ; actions par
+    carte : « Télécharger » (`LinkDownload`) et lien source Audible/Lizzie (`LinkScrapper`).
   - Cliquer sur une vignette saga → page dédiée **`/saga/:id`** (id local dérivé du nom de saga) : `SagaView`
     liste les livres de la saga **triés par tome** (`bookStore.sagaById` + `bookStore.fromSaga`). Le
     « ← Retour » du header revient dans l'historique (`historyStore.backOrHome()` — cf. § 3.8).
@@ -81,7 +104,10 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
      Le **bloc `.suggestions`** (recherche + résultats) est la **zone défilante** (max-height 60vh, scrollbar ambre
      fine) — la liste `.results` n'a pas de hauteur propre et les cartes clipsent leur contenu
      (`.suggestion { overflow: hidden }`). Un clic **remplit tous les champs** (scraper, scrapId, cover, title,
-     author, narrators, runtime, ratings, saga, tome).
+     author, narrators, tags, runtime, ratings, saga, tome) — les **tags** sont ensuite **scrapés à la volée** sur
+     la fiche Audible du livre sélectionné (`scrapTags()` → `GET /api/scrap/tags`, seulement pour `scraper=audible`,
+     spinner dans le champ pendant le scrap ; ils n'apparaissent pas sur les pages recherche/série ; une réponse
+     périmée — sélection plus récente — est jetée, un échec laisse le champ tel quel).
   4. L'utilisateur **édite librement** les champs ; la preview (`BookLarge`, sans download) se met à jour en direct.
   5. « Enregistrer » → ajoute `{ state: 'draft', book }` à la **queue** et **reset** le formulaire
      (**pas de navigation** : on peut enchaîner les livres).
@@ -118,9 +144,24 @@ Champs du formulaire (`FormView`) :
 | Note | `ratings` | nombre (0 si vide) |
 | Saga | `saga.name` | `FormSagaSelect` (voir ci-dessous) |
 | Tome | `saga.tome` | texte, affiché si une saga est saisie |
+| Tags | `tagChips` | **boîte à chips en fin de formulaire** (après Couverture) — voir ci-dessous |
 
-- `FormSagaSelect` : combobox — bouton « Nouvelle saga » + liste des sagas connues (getter `bookStore.sagas`,
-  déduites de la bibliothèque) ; saisie libre si « Nouvelle saga ». Le `v-model` est le **nom** de la saga.
+Ordre des champs : Titre, Auteur, Narrateurs, Durée, Note, Saga, (Tome si saga), Couverture, **Tags**.
+
+- **Champ Tags à chips** (`BookForm.vue`) : un cadre façon input (bordure ambre, rayon 4, lueur au
+  `:focus-within`) contenant les **chips** (petites pills ambre avec une croix à droite pour les retirer) puis
+  un **input sans bordure** pour chercher ou saisir un tag. Les tags scrapés d'une fiche Audible pré-remplissent
+  les chips (cf. § 3.1, `/add` étape 3) ; chaque chip est retirée individuellement (croix).
+- **Autocomplétion « à la manière des sagas »** : les suggestions viennent d'une **collecte des livres de la
+  bibliothèque** (`collectTags()` dans `helpers/tags.ts` — pas de gestion de tags en base), **hors des chips
+  déjà saisies** et filtrées sur le texte tapé (**casse et accents ignorés**, `loose()`). `Entrée` avec une
+  suggestion active (navigation `↑`/`↓`, surlignage comme le sélecteur de saga) l'ajoute ; `Entrée` sans
+  suggestion **crée** le tag tapé (jamais de soumission du formulaire — le handler fait `preventDefault`).
+  Un doublon (casse/accents compris) n'est jamais ajouté : la saisie est simplement vidée. `Échap` ferme le
+  dropdown ; fermeture différée au blur (150 ms, pattern `FormSagaSelect` — `@mousedown.prevent` sur les items).
+- `FormSagaSelect` : combobox — input avec dropdown des sagas connues (getter `bookStore.sagas`, déduites de la
+  bibliothèque), filtrées sur la saisie **sans casse ni accents** ; saisie libre pour créer. Le `v-model` est le
+  **nom** de la saga.
 - Le « livre virtuel » (`computed`) reconstruit un `Book` complet ; il est utilisé pour la preview **et** l'enqueue.
 
 ### 3.4 Queue (implémentation actuelle)
@@ -223,7 +264,8 @@ revenant en arrière (ex. recherche → saga → retour). Pas de bouton « Suiva
 - **Position dans la pile** : vue-router tient la position dans `history.state.position` ; le store mémorise la
   **borne minimale visitée** (`min`) et en déduit `canBack`. `track()` est câblé sur `router.afterEach`
   (dans `main.ts`). La borne est **persistée en sessionStorage** (par onglet) pour survivre au rechargement.
-- **État des pages dans l'URL** : HomeView persiste la recherche (`q`) et le mode (`mode=books`) dans la query —
+- **État des pages dans l'URL** : HomeView persiste la recherche (`q`), le mode (`mode=books`) et le filtre de tag
+  (`tag`) dans la query —
   écriture en **`router.replace`** (la saisie ne crée pas d'entrées d'historique), relecture sur `route.query`
   (retour, liens). La recherche survit donc à navigation → saga → retour.
 - **Formulaire** (`/add`, `/edit/:id`) :
@@ -243,8 +285,8 @@ revenant en arrière (ex. recherche → saga → retour). Pas de bouton « Suiva
 ```json
 { "member": [ /* Book JSON */ ] }
 ```
-Utilisé par `fetchBooks()`. Champs : `id, scraper, scrap_id, title, cover, author, narrators, runtime, ratings, saga, tome`.
-`narrators` est un **tableau** (décision actée).
+Utilisé par `fetchBooks()`. Champs : `id, scraper, scrap_id, title, cover, author, narrators, tags, runtime, ratings, saga, tome`.
+`narrators` et `tags` sont des **tableaux** (décision actée).
 
 **Cache HTTP (ETag / 304)** : le serveur calcule un hash de version de la bibliothèque à chaque requête et renvoie
 `ETag` + `Cache-Control: private, max-age=0, must-revalidate` sur les **200**, et **304** (corps vide) quand le
@@ -258,10 +300,19 @@ client présente la liste via `If-None-Match`. Le frontend revalide à chaque `f
 ```
 Recherche fusionnée Audible + Lizzie. (Livres Audible sans narrateur filtrés.)
 
+### `GET /api/scrap/tags?scraper=audible&scrap_id=…`
+```json
+{ "tags": ["Fantasy", "Épique"] }
+```
+Tags (genres) de la **fiche Audible** — absents des pages recherche/série (recherche et page série). Consommé par
+`scrapTags()` à la sélection d'une suggestion du formulaire ; résultats non vides mis en cache client
+(`tagsCache` FIFO 50, `clearTagsCache()` pour reset). **400** si `scraper` ≠ `audible` ou `scrap_id` absent ;
+échec du scrap → `{"tags": []}` (liste vide, non mise en cache). Lizzie n'expose pas de tags.
+
 ### `POST /api/upload`
 
 Contrat — **multipart/form-data** :
-- Champs texte (noms nus, préfixe de formulaire `''`) : `author, title, cover, saga, tome, narrators, runtime,
+- Champs texte (noms nus, préfixe de formulaire `''`) : `author, title, cover, saga, tome, narrators, tags, runtime,
   ratings, scraper, scrap_id` (chaînes, vides autorisées).
 - `file` : **fichier ZIP obligatoire** (extension `.zip` côté front + back), mimes par contenu `application/zip`,
   `application/octet-stream`, `application/x-zip-compressed`, `multipart/x-zip` ; côté frontend `accept=".zip"` + contrôle
@@ -271,8 +322,8 @@ Contrat — **multipart/form-data** :
   notification Discord (`Notifier::available`) → réponse Book sérialisé.
 
 **Détails** :
-- `narrators` : le champ multipart reste une **chaîne CSV**, le backend la convertit en **tableau** — l'API expose
-  `narrators` en tableau dans toutes les réponses.
+- `narrators` et `tags` : le champ multipart reste une **chaîne CSV**, le backend la convertit en **tableau** —
+  l'API les expose en tableau dans toutes les réponses.
 - `saga` : `VARCHAR(255)`, sans normalisation automatique ; `tome` : `VARCHAR(40)`.
 - Statuts : **201** en succès (Book JSON) ; **400** si formulaire invalide (message d'erreur) ; **500** si échec
   persist, **502** si échec d'indexation/upload 1Fichier.

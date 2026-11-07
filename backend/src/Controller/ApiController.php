@@ -71,7 +71,8 @@ class ApiController extends AbstractController
         }
 
         $book
-            ->setNarrators($this->parseNarrators($form->get('narrators')->getData()))
+            ->setNarrators($this->parseCsv($form->get('narrators')->getData()))
+            ->setTags($this->parseCsv($form->get('tags')->getData()))
             ->setRatings($this->parseRatings($form->get('ratings')->getData()));
 
         /** @var UploadedFile|null $file */
@@ -212,7 +213,8 @@ class ApiController extends AbstractController
             ->setRuntime('')
             ->setScraper('')
             ->setScrapId('')
-            ->setNarrators([]);
+            ->setNarrators([])
+            ->setTags([]);
 
         $error = $this->applyPayload($book, $data);
 
@@ -334,7 +336,8 @@ class ApiController extends AbstractController
             ->setRuntime('')
             ->setScraper('')
             ->setScrapId('')
-            ->setNarrators([]);
+            ->setNarrators([])
+            ->setTags([]);
 
         $error = $this->applyPayload($book, $data);
 
@@ -414,6 +417,16 @@ class ApiController extends AbstractController
             $book->setNarrators(array_map('strval', $narrators));
         }
 
+        if (array_key_exists('tags', $data)) {
+            $tags = $data['tags'];
+
+            if (!is_array($tags)) {
+                return 'Invalid tags.';
+            }
+
+            $book->setTags(array_map('strval', $tags));
+        }
+
         if (array_key_exists('ratings', $data)) {
             $book->setRatings($data['ratings'] === null ? null : (float) $data['ratings']);
         }
@@ -431,7 +444,8 @@ class ApiController extends AbstractController
         ]);
     }
 
-    private function parseNarrators(string $csv): array
+    /** Liste CSV (« a, b ») → tableau de chaînes (narrateurs, tags). */
+    private function parseCsv(string $csv): array
     {
         return preg_split('/\s*,\s*/', trim($csv), -1, PREG_SPLIT_NO_EMPTY) ?: [];
     }

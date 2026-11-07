@@ -6,6 +6,7 @@ use App\Entity\Book;
 use App\Service\Scraping\Fetcher;
 use App\Service\Scraping\ScraperInterface;
 use App\Service\Scraping\SearchRanker;
+use RuntimeException;
 use Throwable;
 
 class AudibleScraper implements ScraperInterface
@@ -214,7 +215,7 @@ class AudibleScraper implements ScraperInterface
         // cURL). Une page trop petite est un mur, pas une fiche : parser la page
         // d'erreur produirait un livre vide (effacement des champs au re-scrap).
         $body = $this->fetchWithRetry(
-            $this->endpoint . 'pd/Book/' . $code,
+            $this->productUrl($code),
             self::MAX_SERIES_ATTEMPTS,
             self::SERIES_RETRY_DELAY,
         );
@@ -235,8 +236,46 @@ class AudibleScraper implements ScraperInterface
         return $book;
     }
 
+    /**
+     * Tags (genres) de la fiche d'un livre : ils n'apparaissent que sur la fiche
+     * produit (ni la recherche, ni la page série ne les exposent). Retries comme
+     * pour les pages série — la fiche reçoit aussi la 503 anti rate-limiting.
+     */
+    public function tags(string $code): array
+    {
+        $html = $this->fetchWithRetry(
+            $this->productUrl($code),
+            self::MAX_SERIES_ATTEMPTS,
+            self::SERIES_RETRY_DELAY,
+        );
+
+        // Mur 503 épuisé : la page reçue est une page d'erreur, pas une fiche —
+        // jeter plutôt que retourner une liste vide, indiscernable d'une fiche
+        // réelle sans genres (le command la compterait en « fiche sans tags » et
+        // ne retraiterait jamais le livre). Le contrôleur frontend attrape et
+        // sert son contrat 200 + tags: [].
+        if (strlen($html) <= self::MIN_REAL_PAGE_BYTES) {
+            throw new RuntimeException(sprintf('Audible wall for %s: page too small (%d bytes).', $code, strlen($html)));
+        }
+
+        return (new AudibleBookParser($html))->getTags();
+    }
+
     protected function fetch(string $url): string
     {
         return Fetcher::get($url);
+    }
+
+    /**
+     * URL de la fiche produit. `ipRedirectOverride` : Audible juge parfois l'IP
+     * « non FR » et redirige pd/* vers audible.de — une page d'accueil de ~95 Ko,
+     * au-dessus du seuil de page réelle, donc indiscernable d'une fiche sans
+     * genres (0 tag) ni d'une fiche sans ASIN (get()). Le paramètre, mécanisme
+     * d'Audible elle-même, garantit la fiche FR quelle que soit la perception de
+     * l'IP (le slug produit se rétablit dans la chaîne de redirection).
+     */
+    private function productUrl(string $code): string
+    {
+        return $this->endpoint . 'pd/Book/' . $code . '?ipRedirectOverride=true';
     }
 }

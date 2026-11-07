@@ -85,7 +85,7 @@ src/
 ├── assets/         # main.css (thème), base.css, images
 ├── components/     # BookLarge/BookCard, DropBox, Form*, Link*, Section*, queue/FormQueue, icons/
 ├── entities/       # Book, Saga (classes) + type guard isSagaBook
-├── helpers/        # logique indépendante des composants (helpers/search.ts : filenameToSearchTerm)
+├── helpers/        # logique indépendante des composants (helpers/search.ts : filenameToSearchTerm ; helpers/tags.ts : collecte/filtrage des tags ; helpers/suggestions.ts : suggestions de recherche et de tags de l'index)
 ├── router/         # routes "/" (HomeView), "/add" (FormView), "/edit/:id", "/saga/:id", "/orphans" (OrphansView), "/intruders" (IntrudersView)
 ├── stores/         # Pinia: book.ts (bibliothèque), queue.ts (file d'envoi), history.ts (historique de navigation)
 └── views/          # HomeView, FormView, SagaView, OrphansView, IntrudersView
@@ -101,6 +101,9 @@ src/
 - `GET /api/scrap?pattern=…` → `Book[]` — recherche de métadonnées fusionnée Audible + Lizzie (`search()`),
   **classée par pertinence côté backend** ; résultats non vides mis en cache client (`clearSearchCache()` pour
   reset) ; `signal` optionnel pour annuler (`AbortSignal`).
+- `GET /api/scrap/tags?scraper=audible&scrap_id=…` → `{ tags: string[] }` — tags (genres) de la **fiche** Audible
+  (`scrapTags()`, appelé à la sélection d'une suggestion du formulaire) ; résultats non vides mis en cache client
+  (`clearTagsCache()` pour reset). Absents des pages recherche/série ; Lizzie n'en expose pas (endpoint refusé).
 - `POST /api/upload` (multipart) — envoi d'un ZIP + métadonnées vers 1Fichier ; **201** + Book JSON (avec `id` =
   id 1Fichier), **400** si formulaire invalide, **500** si échec persist, **502** si échec 1Fichier (`uploadBook()`,
   en **XHR** avec `onProgress`/`signal` pour le suivi de progression et l'abort). En cas d'échec, le message
@@ -169,3 +172,13 @@ La base de toutes les requêtes API est `API_BASE_URL` (`src/api/config.ts`), al
   le « ← Retour » (masqué sur l'accueil) et l'annulation/sauvegarde du formulaire passent par `backOrHome()`, et
   quitter `/add` avec un fichier en attente demande confirmation. Position dans la pile déduite de
   `history.state.position` (borne `min` persistée en sessionStorage, suivi sur `router.afterEach` dans `main.ts`).
+- **Tags** (`helpers/tags.ts` + `helpers/suggestions.ts`, cf. `SPECS.md` § 3.1 et § 3.3) : le champ du formulaire
+  est une **boîte à chips** avec autocomplétion sur les tags de la bibliothèque (collecte client — aucune table
+  de tags en base) ; l'index filtre via un **input de tag dédié** à droite de la recherche (suggestions de tags,
+  filtre appliqué seulement à la validation `Entrée`/suggestion — pas de filtrage à la saisie ; une fois validé,
+  l'input devient **chip** et sa croix fait revenir l'input ; `?tag=…` ; une saga est affichée si au moins un de
+  ses livres porte le tag, et la vignette montre alors tous ses livres). La fiche `BookLarge` porte une
+  **pastille « N tag(s) »** à côté de la note, tooltip au survol :
+  tags **cliquables → index filtré** (bibliothèque) mais **inertes dans la preview du formulaire**
+  (`link-tags=false`). Le scrap des tags à la sélection d'une fiche Audible est inchangé (§ 4, endpoint
+  `/api/scrap/tags`).

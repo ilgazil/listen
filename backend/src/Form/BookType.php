@@ -35,6 +35,11 @@ class BookType extends AbstractType
                 'required' => false,
                 'empty_data' => '',
             ])
+            ->add('tags', TextType::class, [
+                'mapped' => false,
+                'required' => false,
+                'empty_data' => '',
+            ])
             ->add('ratings', TextType::class, [
                 'mapped' => false,
                 'required' => false,

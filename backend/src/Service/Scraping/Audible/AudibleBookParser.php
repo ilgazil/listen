@@ -2,6 +2,7 @@
 
 namespace App\Service\Scraping\Audible;
 
+use App\Entity\Book;
 use App\Service\Scraping\Cache;
 
 class AudibleBookParser extends AudibleSearchParser
@@ -107,5 +108,36 @@ class AudibleBookParser extends AudibleSearchParser
         $this->set('tome', str_replace(',', '.', $tome));
 
         return $this;
+    }
+
+    /**
+     * Tags de la fiche (chips de genres) : liens /tag/genre/, les puces
+     * `<adbl-chip>` comme le bloc noscript (dédupliqué) — sur les deux générations
+     * de markup fiche.
+     */
+    public function getTags(): array
+    {
+        if (!$this->has('tags')) {
+            preg_match_all('/<(?:adbl-chip|a)\s[^>]*href="\/tag\/genre\/[^"]+"[^>]*>(?<tag>[^<]+)</msU', $this->page, $matches);
+
+            $tags = [];
+
+            foreach ($matches['tag'] as $tag) {
+                $tag = trim(html_entity_decode($tag));
+
+                if ($tag !== '' && !in_array($tag, $tags, true)) {
+                    $tags[] = $tag;
+                }
+            }
+
+            $this->set('tags', $tags);
+        }
+
+        return $this->get('tags');
+    }
+
+    public function createBook(): Book
+    {
+        return parent::createBook()->setTags($this->getTags());
     }
 }

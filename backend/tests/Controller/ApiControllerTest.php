@@ -891,6 +891,7 @@ class ApiControllerTest extends WebTestCase
             ->setCover('https://example.com/c.jpg')
             ->setAuthor('Un auteur')
             ->setNarrators(['Un narrateur'])
+            ->setTags([])
             ->setSaga('Une saga');
 
         static::getContainer()->get(EntityManagerInterface::class)->persist($book);

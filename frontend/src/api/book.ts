@@ -46,6 +46,7 @@ function bookFromApi(data: unknown): Book | undefined {
   book.cover = String(source.cover || '')
   book.author = String(source.author || '')
   book.narrators = mapArray(source.narrators)?.map(String) || []
+  book.tags = mapArray(source.tags)?.map(String) || []
   book.runtime = String(source.runtime || '')
   book.ratings = Number(source.ratings) || 0
   book.saga = sagaFromApi(source)
@@ -170,6 +171,53 @@ export async function search(pattern: string, signal?: AbortSignal): Promise<Arr
   return books
 }
 
+// Cache mémoire des tags de fiches : le scrap de la fiche Audible est lent
+// (retries anti rate-limiting), re-sélectionner la même suggestion ne doit pas
+// re-scrape. Seuls les résultats non vides sont mis en cache (une fiche sans tags
+// ou un échec doit pouvoir réessayer).
+const tagsCache = new Map<string, Array<string>>()
+const TAGS_CACHE_MAX = 50
+
+// Réinitialise le cache des tags (tests, rafraîchissement forcé).
+export function clearTagsCache(): void {
+  tagsCache.clear()
+}
+
+export async function scrapTags(
+  scraper: Book['scraper'],
+  scrapId: string,
+  signal?: AbortSignal,
+): Promise<Array<string>> {
+  const key = `${scraper}#${scrapId}`
+
+  const cached = tagsCache.get(key)
+
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/scrap/tags?scraper=${encodeURIComponent(scraper)}&scrap_id=${encodeURIComponent(scrapId)}`,
+    ...(signal ? [{ signal }] : []),
+  )
+  const data = await response.json()
+  const tags = mapArray(mapObject(data)?.tags)?.map(String) || []
+
+  if (tags.length) {
+    if (tagsCache.size >= TAGS_CACHE_MAX) {
+      const oldest = tagsCache.keys().next().value
+
+      if (oldest !== undefined) {
+        tagsCache.delete(oldest)
+      }
+    }
+
+    tagsCache.set(key, tags)
+  }
+
+  return tags
+}
+
 export interface UploadOptions {
   onProgress?: (percent: number) => void
   signal?: AbortSignal
@@ -184,6 +232,7 @@ export function uploadBook(book: Book, file: File, options: UploadOptions = {}):
   form.append('saga', book.saga?.name || '')
   form.append('tome', book.saga?.tome || '')
   form.append('narrators', book.narrators.join(', '))
+  form.append('tags', book.tags.join(', '))
   form.append('runtime', book.runtime)
   form.append('ratings', String(book.ratings || ''))
   form.append('scraper', book.scraper)
@@ -293,6 +342,7 @@ export function bookPayload(book: Book): Record<string, unknown> {
     cover: book.cover,
     author: book.author,
     narrators: book.narrators,
+    tags: book.tags,
     runtime: book.runtime,
     ratings: book.ratings,
     saga: book.saga?.name || '',

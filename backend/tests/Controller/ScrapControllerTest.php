@@ -162,4 +162,62 @@ class ScrapControllerTest extends WebTestCase
 
         $client->request('GET', '/api/scrap?pattern=Multiple%20%20%20Spaces');
     }
+
+    public function testScrapTagsReturnsAudibleBookTags(): void
+    {
+        $client = static::createClient();
+
+        $audible = $this->createMock(AudibleScraper::class);
+        $audible->expects(self::once())->method('tags')->with('B01M2WSG6T')->willReturn(['Fantasy', 'Épique']);
+
+        $container = $client->getContainer();
+        $container->set(AudibleScraper::class, $audible);
+
+        $client->request('GET', '/api/scrap/tags?scraper=audible&scrap_id=B01M2WSG6T');
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame(['tags' => ['Fantasy', 'Épique']], json_decode($client->getResponse()->getContent(), true));
+    }
+
+    public function testScrapTagsRejectsUnknownScraper(): void
+    {
+        $client = static::createClient();
+
+        $audible = $this->createMock(AudibleScraper::class);
+        $audible->expects(self::never())->method('tags');
+
+        $container = $client->getContainer();
+        $container->set(AudibleScraper::class, $audible);
+
+        $client->request('GET', '/api/scrap/tags?scraper=lizzie&scrap_id=un-slug');
+
+        self::assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testScrapTagsRejectsMissingScrapId(): void
+    {
+        $client = static::createClient();
+
+        $client->request('GET', '/api/scrap/tags?scraper=audible');
+
+        self::assertSame(400, $client->getResponse()->getStatusCode());
+    }
+
+    public function testScrapTagsReturnsEmptyListWhenScrapFails(): void
+    {
+        // Un échec (réseau, anti-bot…) ne doit pas faire échouer la requête :
+        // liste vide — le champ reste éditable à la main côté frontend.
+        $client = static::createClient();
+
+        $audible = $this->createStub(AudibleScraper::class);
+        $audible->method('tags')->willThrowException(new \RuntimeException('Audible hors ligne'));
+
+        $container = $client->getContainer();
+        $container->set(AudibleScraper::class, $audible);
+
+        $client->request('GET', '/api/scrap/tags?scraper=audible&scrap_id=B01M2WSG6T');
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertSame(['tags' => []], json_decode($client->getResponse()->getContent(), true));
+    }
 }

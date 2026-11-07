@@ -42,7 +42,7 @@ cp .env .env.local
 # Base de données
 docker compose up -d                                    # PostgreSQL local
 php bin/console doctrine:database:create
-php bin/console doctrine:migrations:migrate             # (1 migration commitée : Version20260808000001)
+php bin/console doctrine:migrations:migrate             # (2 migrations commitées : Version20260808000001 + Version20261106000001)
 
 # Serveur de dev
 symfony serve                                           # http://localhost:8000
@@ -74,7 +74,8 @@ php bin/console cache:clear
 src/
 ├── Command/
 │   ├── ParseBookCommand.php          # app:scrap-book (re-scrape un livre)
-│   └── BookBatchCommand.php          # app:batch (nettoyage en lot, normalise tome)
+│   ├── BookBatchCommand.php          # app:batch (nettoyage en lot, normalise tome)
+│   └── ScrapTagsCommand.php          # app:scrap-tags (tags Audible de toute la bibliothèque)
 ├── Controller/
 │   ├── ApiController.php             # POST /api/upload + GET /api/download/{id}
 │   └── ScrapController.php           # GET /api/scrap (recherche fusionnée Audible + Lizzie)
@@ -114,7 +115,8 @@ src/
 | `title`      | string, 255        | requis |
 | `cover`      | string, 255        | URL de couverture |
 | `author`     | string, 255        | |
-| `narrators`  | SIMPLE_ARRAY       | liste de chaînes |
+| `narrators`  | string CSV (VARCHAR(255)) | liste de chaînes |
+| `tags`       | string CSV (VARCHAR(255)) | liste de chaînes — tags de la fiche Audible (identique à `narrators`) |
 | `runtime`    | string, 15, nullable | format `H:i` (`00:00` = inconnu) |
 | `ratings`    | float, nullable    | note Audible (ex. `4.6`) |
 | `saga`       | string, 255        | **stockée en simple colonne string** (pas de relation ni entité Saga) |
@@ -131,9 +133,10 @@ src/
 ### Routes livrées
 
 - `GET /api/books?pagination=false` — liste des livres (API Platform). Utilisé par `frontend/src/api/book.ts::fetchBooks()`.
-  **Cache HTTP** : `EventListener/BookCollectionCacheListener` calcule un ETag (hash SQL de la bibliothèque +
-  URI) à chaque requête ; **304** (corps vide) si `If-None-Match` correspond (court-circuit via contrôleur
-  jetable, avant toute pipeline API Platform), sinon **200** + `ETag` + `Cache-Control: private, max-age=0, must-revalidate`.
+  **Cache HTTP** : `EventListener/BookCollectionCacheListener` calcule un ETag (hash SQL des lignes de `book` —
+  **toutes colonnes**, `tags` inclus, via `libraryVersionHash()` — + URI) à chaque requête ; **304** (corps vide) si
+  `If-None-Match` correspond (court-circuit via contrôleur jetable, avant toute pipeline API Platform), sinon
+  **200** + `ETag` + `Cache-Control: private, max-age=0, must-revalidate`.
 - `GET /api/books/{id}` — détail (API Platform).
 - `GET /api/scrap?pattern=...` — recherche de métadonnées, **fusion Lizzie + Audible classée par pertinence**.
   - Pattern normalisé via `SearchRanker::normalize()` (multibyte : accents translittérés, apostrophes,
@@ -144,11 +147,16 @@ src/
   - **Fusion** : `SearchRanker::merge()` — score, dédup titre+auteur, tri pertinence, plafond 30.
   - **Filtre** : les résultats Audible sans narrateur sont écartés (dans `AudibleSearchParser::getBooks()`).
   - **Résilience** : chaque scraper est isolé par try/catch — un échec ne prive jamais l'autre source de résultats.
-- `POST /api/upload` (multipart/form-data) — champs `author, title, cover, saga, tome, narrators, runtime, ratings,
+- `GET /api/scrap/tags?scraper=audible&scrap_id=…` — tags (genres) de la **fiche** Audible d'un livre
+  (`{"tags": [...]}`) : ils n'apparaissent que sur la fiche produit, pas sur les pages recherche/série. Le frontend
+  les demande à la sélection d'une suggestion du formulaire. **400** si `scraper` ≠ `audible` ou `scrap_id` absent ;
+  échec du scrap (réseau, anti-bot…) → **200** + `{"tags": []}` (log `error`) — le champ reste éditable à la main.
+  Lizzie n'expose pas de tags : rien à faire de ce côté.
+- `POST /api/upload` (multipart/form-data) — champs `author, title, cover, saga, tome, narrators, tags, runtime, ratings,
   scraper, scrap_id` + `file` (ZIP obligatoire : **extension `.zip`** + mimes par contenu `application/zip`,
   `application/octet-stream`, `application/x-zip-compressed`, `multipart/x-zip`). Flux : upload local
   (`LocalFileUploader`) → upload 1Fichier (`UnFichierApi::upload`) → `book.id` = id de téléchargement 1Fichier →
-  suppression du fichier local → persist → notification Discord. `narrators` est un tableau sur l'API (le champ
+  suppression du fichier local → persist → notification Discord. `narrators` et `tags` sont des tableaux sur l'API (le champ
   multipart reste une chaîne CSV parsée en tableau). Réponses : **201** en succès (Book sérialisé), **400** si
   formulaire invalide, **500** si échec persist, **502** si échec 1Fichier.
 - `GET /api/download/{id}` — **302** `Location: <URL temporaire 1Fichier>` ; **404** si livre inconnu, **502** si le
@@ -161,6 +169,19 @@ src/
 ### Commandes CLI
 - `app:scrap-book <ids...>` — re-scrape un livre depuis son scraper (Audible/Lizzie), propose les champs modifiés (confirmation interactive).
 - `app:batch` — nettoyage en lot (ex. normalisation de `tome` : extrait `[\d.]+`).
+- `app:scrap-tags [--dry-run] [--limit=N] [--scrap-id=<asin>] [--empty-only]` — va chercher les **tags (genres) de
+  la fiche Audible** de chaque livre de la bibliothèque (`AudibleScraper::tags()`, une page produit par livre) et
+  met à jour `Book.tags`. **Uniquement les livres `scraper=audible`** (Lizzie n'expose pas de tags) ; `--scrap-id`
+  cible un ASIN précis, `--limit` plafonne le nombre de pages fetchées (0 = pas de limite ; un livre sauté ne
+  consomme pas le quota), `--dry-run` affiche les changements sans flusher, `--empty-only` ne fetch que les livres
+  **sans tags** — les déjà taggés sont écartés sans consommer de fetch (reprise après murs : seuls les manques
+  re-partent chez Audible ; sans lui, une relance re-fetch tout, la comparaison triée ne protégeant que le flush,
+  pas le fetch). **Sécurités** : une fiche **réelle** sans genres ne vide **jamais** des tags existants (comptée
+  en skip) ; un **mur 503 épuisé** (page d'erreur ~2 Ko) fait **jeter** `tags()` → compté en échec et **retraité à
+  la relance** (distingué du skip ; combiner avec `--empty-only` pour la reprise) ; chaque échec est isolé par
+  livre (les autres continuent) ; comparaison **triée** (l'ordre des tags de la fiche n'est pas significatif) ;
+  flush **par livre** (interruption = ce qui est fait est sauvegardé) ; pause de 0,5 s entre deux fetches (mur
+  503 anti rate-limiting d'Audible, cf. « Pièges connus »).
 - `app:migrate-1fichier --new-token=<clé> --new-folder-name=listen` — migration **one-shot** du stockage vers un
   autre compte 1Fichier : chaque fichier du dossier `API_1FICHIER_APP_FOLDER_ID` (compte source, **lecture seule**)
   est téléchargé puis ré-uploade sur le nouveau compte, et les `Book.id` sont mis à jour en base (le hash d'accès
@@ -201,7 +222,11 @@ src/
   le JSON (nom de série fiable quand le sous-titre est descriptif, ex. « A Full-Cast BBC Radio Dramatisation ») ;
   l'ASIN vient de l'URL canonique. `get()` fetch avec **retries** (mur 503) et rejette : les pages trop petites
   (mur épuisé) et les pages « titre indisponible » (aucun ASIN canonique) → `null`, jamais de livre fantôme à
-  partir d'une page d'erreur.
+  partir d'une page d'erreur. `tags()` (fiche, genres `/tag/genre/`) : mêmes retries — un **mur épuisé jette**
+  (page trop petite) : l'endpoint frontend attrape et sert 200 + `tags: []`, la commande CLI compte un échec
+  retraitable. **URL produit** (`pd/Book/…`) : `?ipRedirectOverride=true` — Audible juge parfois l'IP « non FR »
+  et redirige les fiches vers audible.de (accueil ~95 Ko, au-dessus du seuil de page réelle : 0 tag, fiche
+  fantôme) ; le paramètre (mécanisme d'Audible) garantit la fiche FR, le slug se rétablissant dans la redirection.
   **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche dans un des deux sens** (score
   ≥ `MIN_SERIES_SCORE` : tous les mots du pattern dans le nom, ou le nom de la saga contenu dans la recherche)
   a un lien « Série : … » dans les résultats, sa page série est scrapée (elle liste la saga complète — même si un

@@ -5,6 +5,7 @@ namespace App\Tests\Service\Scraping\Audible;
 use App\Service\Scraping\Audible\AudibleScraper;
 use App\Service\Scraping\Audible\AudibleSeriesCache;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 class AudibleScraperTest extends TestCase
 {
@@ -355,5 +356,53 @@ class AudibleScraperTest extends TestCase
                 return ($this->fetcher)($url);
             }
         };
+    }
+
+    public function testTagsFromBookPage(): void
+    {
+        if (!is_file(self::BOOK_FIXTURE)) {
+            self::markTestSkipped('fixture audible-book.html non présente (gitignorée).');
+        }
+
+        $scraper = $this->scraper(fn (string $url): string => (string) file_get_contents(self::BOOK_FIXTURE));
+
+        $tags = $scraper->tags('B01M2WSG6T');
+
+        foreach (['Contemporain', 'Fantasy', 'Science-fiction', 'Sorcellerie et épées', 'Épique'] as $tag) {
+            self::assertContains($tag, $tags, "le tag « $tag » manque");
+        }
+    }
+    public function testTagsRetries503ErrorPage(): void
+    {
+        if (!is_file(self::BOOK_FIXTURE)) {
+            self::markTestSkipped('fixture audible-book.html non présente (gitignorée).');
+        }
+
+        // Audible renvoie parfois sa page d'erreur (503, ~2 Ko) sans faire
+        // échouer le transfert : on retente jusqu'à obtenir la fiche.
+        $errorPage = '<html><body>Service Unavailable</body></html>';
+        $calls = 0;
+
+        $scraper = $this->scraper(function (string $url) use (&$calls, $errorPage): string {
+            $calls++;
+
+            return $calls >= 3 ? (string) file_get_contents(self::BOOK_FIXTURE) : $errorPage;
+        });
+
+        self::assertContains('Fantasy', $scraper->tags('B01M2WSG6T'));
+    }
+    public function testTagsThrowsOnSmallErrorPageAfterRetries(): void
+    {
+        // 503 épuisée (3 tentatives) : la page reçue est une page d'erreur, pas
+        // une fiche — jeter (le command distingue l'échec à retraiter d'une fiche
+        // réellement sans tags ; le contrôleur frontend attrape et sert 200 + []).
+        $errorPage = '<html><body>Service Unavailable</body></html>';
+
+        $scraper = $this->scraper(fn (): string => $errorPage);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('page too small');
+
+        $scraper->tags('B01M2WSG6T');
     }
 }

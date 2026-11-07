@@ -48,6 +48,9 @@ class Book
     #[ORM\Column(length: 255)]
     private ?string $narrators = null;
 
+    #[ORM\Column(length: 255)]
+    private ?string $tags = null;
+
     #[ORM\Column(length: 15, nullable: true)]
     #[Groups(['book:read'])]
     private ?string $runtime = null;
@@ -148,6 +151,22 @@ class Book
     public function setNarrators(array $narrators): static
     {
         $this->narrators = implode(',', array_map('trim', $narrators));
+
+        return $this;
+    }
+
+    #[Groups(['book:read'])]
+    public function getTags(): array
+    {
+        return array_map(
+            'trim',
+            array_filter(explode(',', $this->tags ?? '')),
+        );
+    }
+
+    public function setTags(array $tags): static
+    {
+        $this->tags = implode(',', array_map('trim', $tags));
 
         return $this;
     }

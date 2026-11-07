@@ -47,7 +47,7 @@ Route API Platform auto-générée sur `Book` (`#[ApiResource]`, préfixe `/api`
 |---------|--------|
 | Réponse | `{ "member": [ Book JSON ] }` (collection) |
 | `pagination=false` | désactive la pagination (requis par le front) |
-| Book JSON | `id, scraper, scrap_id, title, cover, author, narrators, runtime, ratings, saga, tome` (snake_case, `narrators` = tableau) |
+| Book JSON | `id, scraper, scrap_id, title, cover, author, narrators, tags, runtime, ratings, saga, tome` (snake_case, `narrators` et `tags` = tableaux) |
 
 ### 3.2 `GET /api/books/{id}`
 
@@ -108,6 +108,7 @@ Contrat — **multipart/form-data**, noms de champs nus (préfixe de formulaire 
 | `saga` | string | non | envoyé tel quel (pas de normalisation) |
 | `tome` | string | non | `VARCHAR(40)` |
 | `narrators` | string (CSV) | non | ex. `"Julien Rochefort, Marie Duplex"` → **tableau** en base/API |
+| `tags` | string (CSV) | non | ex. `"Fantasy, Épique"` → **tableau** en base/API |
 | `runtime` | string | non | format `H:i` (`00:00` = inconnu) |
 | `ratings` | string | non | ex. `"4.6"` → **float** en base/API |
 | `scraper` | string | non | `audible` \| `lizzie` |
@@ -271,6 +272,29 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 | **409** | `{"error": ...}` | le fichier est encore présent sur 1Fichier |
 | **502** | `{"error": ...}` | le listing 1Fichier échoue (vérification impossible) |
 
+### 4.8 `GET /api/scrap/tags?scraper=audible&scrap_id=…`
+
+**Objectif** : récupérer les **tags (genres) de la fiche Audible** d'un livre — ils n'apparaissent que sur la
+fiche produit (`pd/Book/{asin}`), ni la recherche ni la page série ne les exposent. Le frontend les demande à la
+sélection d'une suggestion dans le formulaire (champ texte éditable). **Lizzie n'expose pas de tags** : le
+endpoint n'accepte que `scraper=audible`.
+
+#### Flux
+
+1. Validation : `scraper === 'audible'` + `scrap_id` non vide → sinon **400**.
+2. `AudibleScraper::tags($scrapId)` : scrap de la fiche avec **retries** (503 anti rate-limiting, même mécanique
+   que les pages série) puis parsing des puces `<adbl-chip href="/tag/genre/…">` (dédup des doublons noscript,
+   entités décodées).
+3. Échec du scrap (réseau, anti-bot…) : **200** + `{"tags": []}` (log `error`) — pas d'erreur propagée, le champ
+   reste éditable à la main côté frontend.
+
+#### Réponses
+
+| Statut | Corps | Cas |
+|--------|-------|-----|
+| **200** | `{"tags": ["Fantasy", "Épique", …]}` | succès (liste vide = fiche sans tags ou échec de scrap) |
+| **400** | `{"error": "Unknown scraper or missing scrap_id."}` | scraper non supporté ou id absent |
+
 ---
 
 ## 5. Schéma de données
@@ -281,7 +305,8 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 |-------|------|-------|
 | `id` | string, 20, nullable | = id de téléchargement 1Fichier |
 | `tome` | `VARCHAR(40)`, nullable | ex. `1.5` |
-| `narrators` | `SIMPLE_ARRAY` | liste de chaînes |
+| `narrators` | `VARCHAR(255)` | liste de chaînes (CSV) |
+| `tags` | `VARCHAR(255)` | liste de chaînes (CSV) — tags de la fiche Audible (identique à `narrators`) |
 | `saga` | `VARCHAR(255)` | sans normalisation |
 | `ratings` | float, nullable | |
 | `getFilename()` | méthode | nom de fichier 1Fichier (`auteur - saga - tome - titre` translittéré, `.zip`) |
@@ -290,6 +315,8 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 
 - `migrations/Version20260808000001.php` : extension `tome` en `VARCHAR(40)` (compatible PostgreSQL / MariaDB,
   branches `addSql` distinctes par plateforme).
+- `migrations/Version20261106000001.php` : ajout de `tags VARCHAR(255) NOT NULL` sur `book` (tags de la fiche
+  Audible, structure identique à `narrators`).
 - **À appliquer manuellement en prod** (pas d'exécution automatique au déploiement) :
   `php bin/console doctrine:migrations:migrate`.
 
@@ -303,7 +330,7 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 - [x] **Format des erreurs** : `{"error": "<message>"}` partout (400/500/502).
 - [x] **Boucle infinie 1Fichier** : borner `getDownloadId()` (max essais + timeout) → **502**.
 - [x] **API Platform** : désactiver `POST/PUT/PATCH/DELETE` sur `/api/books` (n'exposer que GET collection + GET item).
-- [x] **Commandes CLI** (`app:scrap-book`, `app:batch`) : conservées (usage debug, tant qu'aucun test e2e).
+- [x] **Commandes CLI** (`app:scrap-book`, `app:batch`, `app:scrap-tags`) : conservées (usage debug/maintenance, tant qu'aucun test e2e).
 - [x] **Tests** : écrire des tests fonctionnels PHPUnit (upload/download) avec 1Fichier **mocké** (pas d'appel
       réseau réel).
 - [x] **Logging** : ne jamais logger tokens/secrets ; rester sur `debug` pour le pipeline d'upload.
@@ -345,6 +372,9 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 - [x] **Orphelins** : `GET /api/orphans` renvoie les fichiers non référencés ; `POST /api/orphans/{id}` crée le
       `Book` (201) avec les statuts d'erreur 400/404/409/502 ; `DELETE /api/orphans/{id}` supprime (204) avec
       404/502 — couverts par `ApiControllerTest` + `UnFichierApiTest`.
+- [x] **Tags** : `GET /api/scrap/tags` renvoie les tags de la fiche Audible (`{"tags": [...]}`, liste vide en cas
+      d'échec de scrap, 400 si scraper/id invalides) — `ScrapControllerTest` + `AudibleBookParserTest` +
+      `AudibleScraperTest`.
 - [x] **Intrus** : `GET /api/intruders` renvoie les `Book` sans fichier sur 1Fichier ; `DELETE
       /api/intruders/{id}` supprime l'entrée (204) avec les statuts d'erreur 404/409/502 ;
       `UnFichierApi::getStoredIds()` est couvert — dans `ApiControllerTest` + `UnFichierApiTest`.
@@ -365,4 +395,4 @@ l'inverse d'un orphelin — l'entrée en base existe mais aucun fichier ne lui c
 | **Saga** | série/collection de livres ; `tome` = numéro dans la série (stocké en simple colonne) |
 | **Orphelin** | fichier 1Fichier sans livre correspondant (`GET /api/orphans`) |
 | **Intrus** | livre en base dont le fichier a disparu de 1Fichier (`GET /api/intruders`) |
-| **Book JSON** | objet sérialisé API Platform : `id, scraper, scrap_id, title, cover, author, narrators, runtime, ratings, saga, tome` |
+| **Book JSON** | objet sérialisé API Platform : `id, scraper, scrap_id, title, cover, author, narrators, tags, runtime, ratings, saga, tome` |

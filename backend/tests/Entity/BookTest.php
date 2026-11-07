@@ -40,6 +40,26 @@ class BookTest extends TestCase
         self::assertSame([], $book->getNarrators());
     }
 
+    public function testTagsStoredAsCsvStringWhileApiIsArray(): void
+    {
+        $book = new Book();
+        $book->setTitle('T');
+        $book->setTags([' Fantasy ', 'Science-fiction', ' Épique ']);
+
+        $property = new \ReflectionProperty(Book::class, 'tags');
+
+        self::assertSame('Fantasy,Science-fiction,Épique', $property->getValue($book));
+        self::assertSame(['Fantasy', 'Science-fiction', 'Épique'], $book->getTags());
+    }
+
+    public function testEmptyTagsIsEmptyArray(): void
+    {
+        $book = new Book();
+        $book->setTitle('T');
+
+        self::assertSame([], $book->getTags());
+    }
+
     public function testGetFilename(): void
     {
         $book = new Book();
@@ -65,6 +85,7 @@ class BookTest extends TestCase
         $book->setScraper('audible');
         $book->setScrapId('ASIN1');
         $book->setNarrators(['Narrateur 1', 'Narrateur 2']);
+        $book->setTags(['Fantasy', 'Épique']);
 
         $serializer = new Serializer(
             [new ObjectNormalizer(new ClassMetadataFactory(new AttributeLoader()))],
@@ -81,6 +102,7 @@ class BookTest extends TestCase
             'cover' => 'https://example.com/c.jpg',
             'author' => 'Auteur',
             'narrators' => ['Narrateur 1', 'Narrateur 2'],
+            'tags' => ['Fantasy', 'Épique'],
             'runtime' => '10:30',
             'ratings' => 4.6,
             'saga' => 'Saga',
@@ -103,6 +125,7 @@ class BookTest extends TestCase
         self::assertSame($book, $book->setScraper('audible'));
         self::assertSame($book, $book->setScrapId('ASIN'));
         self::assertSame($book, $book->setNarrators(['N']));
+        self::assertSame($book, $book->setTags(['Tag']));
     }
 
     public function testDefaultValuesAreNull(): void

@@ -47,7 +47,8 @@ class BookRepository extends ServiceEntityRepository
                    b.ratings,
                    b.saga,
                    b.tome,
-                   b.narrators
+                   b.narrators,
+                   b.tags
             FROM book b
             ORDER BY b.id
             SQL,

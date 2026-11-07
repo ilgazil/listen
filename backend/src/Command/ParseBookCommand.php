@@ -103,6 +103,10 @@ class ParseBookCommand extends Command
             $diff[] = 'narrators';
         }
 
+        if ($base->getTags() !== $book->getTags()) {
+            $diff[] = 'tags';
+        }
+
         if ($base->getRuntime() !== $book->getRuntime()) {
             $diff[] = 'runtime';
         }

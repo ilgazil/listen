@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clearBooksCache,
   clearSearchCache,
+  clearTagsCache,
   fetchBooks,
   normalizeSearch,
   reportUploadCut,
+  scrapTags,
   search,
   updateBook,
   uploadBook,
@@ -15,6 +17,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   clearBooksCache()
   clearSearchCache()
+  clearTagsCache()
 })
 
 class FakeXMLHttpRequest {
@@ -234,6 +237,61 @@ describe('search', () => {
     await search('signal test', controller.signal)
 
     expect(fetchMock).toHaveBeenCalledWith('/api/scrap?pattern=signal%20test', {
+      signal: controller.signal,
+    })
+  })
+})
+
+describe('scrapTags', () => {
+  it('appelle l endpoint tags avec le scraper et le scrap_id encodés', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ tags: ['Fantasy', 'Épique'] })))
+
+    const tags = await scrapTags('audible', 'B01M2WSG6T')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/scrap/tags?scraper=audible&scrap_id=B01M2WSG6T')
+    expect(tags).toEqual(['Fantasy', 'Épique'])
+  })
+
+  it('met en cache les résultats non vides par scraper#scrap_id', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ tags: ['Fantasy'] })))
+
+    const first = await scrapTags('audible', 'B1')
+    const second = await scrapTags('audible', 'B1')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(second).toBe(first)
+  })
+
+  it('ne met pas en cache une liste vide (permet de réessayer)', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ tags: [] })))
+
+    await scrapTags('audible', 'B1')
+    await scrapTags('audible', 'B1')
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('retourne une liste vide si la réponse ne contient pas de tags', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: '...' })))
+
+    expect(await scrapTags('audible', 'B1')).toEqual([])
+  })
+
+  it('transmet le signal d’annulation à la requête', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ tags: [] })))
+    const controller = new AbortController()
+
+    await scrapTags('audible', 'B1', controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/scrap/tags?scraper=audible&scrap_id=B1', {
       signal: controller.signal,
     })
   })

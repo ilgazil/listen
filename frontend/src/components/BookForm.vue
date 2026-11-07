@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { search } from '@/api/book.ts'
+import { computed, ref, useId, watch } from 'vue'
+import { search, scrapTags } from '@/api/book.ts'
 import { Book } from '@/entities/book.ts'
 import { Saga } from '@/entities/saga.ts'
+import { collectTags, loose } from '@/helpers/tags.ts'
 import { useBookStore } from '@/stores/book.ts'
 import BookLarge from '@/components/BookLarge.vue'
 import BookCard from '@/components/BookCard.vue'
@@ -33,12 +34,22 @@ const loading = ref(false)
 const searchError = ref('')
 const term = ref('')
 const selectedSource = ref('')
+// Le label du champ tags enveloppe aussi les chips (des boutons) : sans
+// association explicite, le contrôle du label serait la PREMIÈRE croix
+// (premier labelable descendant) — le hover/clic du champ lui serait
+// transmis (croix blanchie au survol du cadre, tag retiré au clic).
+const tagsInputId = useId()
 const scrapper = ref<Book['scraper']>('audible')
 const scrapId = ref<Book['scrapId']>('')
 const cover = ref('')
 const title = ref('')
 const author = ref('')
 const narrators = ref('')
+const tagChips = ref(new Array<string>())
+const tagQuery = ref('')
+const tagOpen = ref(false)
+const tagActive = ref(-1)
+const tagsLoading = ref(false)
 const runtime = ref('')
 const ratings = ref(0)
 const saga = ref('')
@@ -55,6 +66,8 @@ const virtualBook = computed<Book>(() => {
   book.author = author.value
 
   book.narrators = narrators.value.split(/,\s*/g)
+
+  book.tags = [...tagChips.value]
 
   book.runtime = runtime.value
   book.ratings = ratings.value
@@ -106,7 +119,20 @@ const duplicate = computed(() => {
   )
 })
 
+// Suggestions de tags collectées depuis la bibliothèque (aucune gestion de tags
+// en base) : hors des chips déjà saisies, filtrés sur le texte tapé — casse et
+// accents ignorés, à la manière du sélecteur de saga.
+const tagSuggestions = computed(() => {
+  const needle = loose(tagQuery.value)
+
+  return collectTags(bookStore.books)
+    .map((tag) => tag.name)
+    .filter((name) => !tagChips.value.some((chip) => loose(chip) === loose(name)))
+    .filter((name) => !needle || loose(name).includes(needle))
+})
+
 let lastSearch = ''
+let tagsFetchId = 0
 let abortController = new AbortController()
 let searchHandle = 0
 
@@ -134,7 +160,7 @@ watch(
   { immediate: true },
 )
 
-function select(book: Book): void {
+function select(book: Book, fetchTags = false): void {
   selectedSource.value = `${book.scraper}#${book.scrapId}`
   scrapper.value = book.scraper
   scrapId.value = book.scrapId
@@ -142,10 +168,113 @@ function select(book: Book): void {
   title.value = book.title
   author.value = book.author
   narrators.value = book.narrators.join(', ')
+  tagChips.value = [...book.tags]
+  tagQuery.value = ''
+  tagOpen.value = false
+  tagActive.value = -1
   runtime.value = book.runtime
   ratings.value = book.ratings ?? 0
   saga.value = book.saga?.name || ''
   tome.value = book.saga?.tome || ''
+
+  // Les tags ne figurent que sur la fiche Audible (ni la recherche, ni la page
+  // série ne les exposent) : on va les chercher à la sélection d'une suggestion.
+  // Rien à faire pour Lizzie.
+  if (fetchTags && book.scraper === 'audible' && book.scrapId) {
+    void fetchBookTags(book.scrapId)
+  }
+}
+
+/**
+ * Scrap des tags de la fiche sélectionnée : remplit le champ quand la réponse
+ * arrive, sauf si une autre suggestion a été sélectionnée entre-temps (réponse
+ * périmée). Un échec laisse le champ tel quel : il reste éditable à la main.
+ */
+async function fetchBookTags(scrapId: string): Promise<void> {
+  // Seul le dernier fetch décroche le spinner (les réponses périmées sont jetées).
+  const id = ++tagsFetchId
+  tagsLoading.value = true
+
+  try {
+    const fetched = await scrapTags('audible', scrapId)
+
+    if (selectedSource.value === `audible#${scrapId}`) {
+      tagChips.value = [...fetched]
+    }
+  } catch {
+    // Échec silencieux : la saisie manuelle reste la suite.
+  } finally {
+    if (id === tagsFetchId) {
+      tagsLoading.value = false
+    }
+  }
+}
+
+/**
+ * Ajoute un tag (suggestion ou saisie libre) : dédupliqué sans casse ni accents.
+ * Un doublon n'est jamais ajouté — la saisie est simplement vidée.
+ */
+function addTag(raw: string): void {
+  const name = raw.trim()
+
+  if (!name) {
+    return
+  }
+
+  if (!tagChips.value.some((chip) => loose(chip) === loose(name))) {
+    tagChips.value = [...tagChips.value, name]
+  }
+
+  tagQuery.value = ''
+  tagActive.value = -1
+}
+
+function removeTag(index: number): void {
+  tagChips.value = tagChips.value.filter((_, i) => i !== index)
+}
+
+function onTagInput(): void {
+  tagOpen.value = true
+  tagActive.value = -1
+}
+
+function onTagKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+
+    if (tagOpen.value && tagSuggestions.value.length) {
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      tagActive.value =
+        (tagActive.value + delta + tagSuggestions.value.length) % tagSuggestions.value.length
+    }
+
+    return
+  }
+
+  if (event.key === 'Enter') {
+    // Entrée ne doit jamais soumettre le formulaire ici : elle ajoute la
+    // suggestion active, ou crée le tag saisi s'il n'y en a pas.
+    event.preventDefault()
+
+    const suggestion = tagOpen.value && tagActive.value >= 0 ? tagSuggestions.value[tagActive.value] : undefined
+
+    addTag(suggestion ?? tagQuery.value)
+    return
+  }
+
+  if (event.key === 'Escape') {
+    tagOpen.value = false
+    tagActive.value = -1
+  }
+}
+
+// Fermeture différée : laisser le temps au mousedown.prevent d'ajouter la
+// suggestion avant que le dropdown disparaisse (pattern du sélecteur de saga).
+function onTagBlur(): void {
+  setTimeout(() => {
+    tagOpen.value = false
+    tagActive.value = -1
+  }, 150)
 }
 
 function onSearchChange(): void {
@@ -203,6 +332,10 @@ function closeSearch(): void {
 function submit(event: Event) {
   event.preventDefault()
 
+  if (tagsLoading.value) {
+    return
+  }
+
   emit('submit', virtualBook.value)
 }
 
@@ -219,6 +352,12 @@ function reset(): void {
   title.value = ''
   author.value = ''
   narrators.value = ''
+  tagChips.value = []
+  tagQuery.value = ''
+  tagOpen.value = false
+  tagActive.value = -1
+  tagsLoading.value = false
+  tagsFetchId++
   runtime.value = ''
   ratings.value = 0
   saga.value = ''
@@ -277,10 +416,51 @@ function reset(): void {
           <span>Couverture</span>
           <input type="text" v-model="cover" />
         </label>
+
+        <label :for="tagsInputId">
+          <span>Tags</span>
+          <div class="tags-box">
+            <span v-for="(tag, index) of tagChips" v-bind:key="tag" class="tag">
+              {{ tag }}
+              <button
+                type="button"
+                class="remove"
+                aria-label="Retirer le tag"
+                @click="removeTag(index)"
+              >
+                ×
+              </button>
+            </span>
+
+            <input
+              :id="tagsInputId"
+              type="text"
+              v-model="tagQuery"
+              placeholder="Chercher ou créer un tag..."
+              @input="onTagInput"
+              @focus="tagOpen = true"
+              @blur="onTagBlur"
+              @keydown="onTagKeydown"
+            />
+
+            <div class="tags-dropdown" v-show="tagOpen && tagSuggestions.length > 0">
+              <button
+                v-for="(name, index) in tagSuggestions"
+                v-bind:key="name"
+                type="button"
+                :class="{ active: index === tagActive }"
+                @mousedown.prevent="addTag(name)"
+              >
+                {{ name }}
+              </button>
+            </div>
+          </div>
+          <IconLoading v-if="tagsLoading" class="spinner" />
+        </label>
       </div>
 
       <div class="preview">
-        <BookLarge :book="virtualBook" :no-download="true" />
+        <BookLarge :book="virtualBook" :no-download="true" :link-tags="false" />
       </div>
     </div>
 
@@ -296,7 +476,7 @@ function reset(): void {
           <IconClose />
           Annuler
         </button>
-        <button type="submit" class="solid">
+        <button type="submit" class="solid" :disabled="tagsLoading">
           <IconSave />
           {{ submitLabel ?? 'Enregistrer' }}
         </button>
@@ -423,6 +603,11 @@ form {
         color: var(--color-amber-darker);
         box-shadow: 0 0 10px var(--color-amber-light);
       }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     }
 
     .ghost {
@@ -459,6 +644,123 @@ form {
 
     > input[type='text'] {
       flex: 1;
+    }
+
+    > .tags-box {
+      flex: 1;
+    }
+
+    .spinner {
+      flex-shrink: 0;
+      width: 1rem;
+      height: 1rem;
+      color: var(--color-amber);
+    }
+  }
+
+  .tags-box {
+    /* Cadre façon input (bordure ambre, rayon 4, lueur au focus) contenant les
+       chips et le champ de saisie libre. */
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    padding: 0.25rem 0.5rem;
+    background-color: transparent;
+    border: 1px solid var(--color-amber);
+    border-radius: 4px;
+    color: var(--color-text);
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
+
+    &:hover,
+    &:focus-within {
+      border-color: var(--color-amber-light);
+      box-shadow: 0 0 8px oklch(87.9% 0.169 91.605);
+    }
+
+    > input {
+      /* Champ interne sans bordure : le cadre est porté par la boîte. */
+      flex: 1;
+      min-width: 8rem;
+      padding: 0.125rem 0.25rem;
+      background: none;
+      border: none;
+
+      &:hover,
+      &:focus {
+        border: none;
+        box-shadow: none;
+      }
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.125rem 0.5rem;
+      font-size: 0.8rem;
+      color: var(--color-amber);
+      background-color: color-mix(in oklab, var(--color-amber) 12%, transparent);
+      border: 1px solid var(--color-amber);
+      border-radius: 999px;
+
+      .remove {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        font-size: 0.9rem;
+        line-height: 1;
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+
+        &:hover {
+          color: var(--color-amber-lighter);
+        }
+      }
+    }
+
+    .tags-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 2px;
+      max-height: 12rem;
+      overflow-y: auto;
+      background-color: var(--color-background-mute);
+      border: 1px solid var(--color-amber);
+      border-radius: 4px;
+      z-index: 10;
+      scrollbar-color: var(--color-amber) transparent;
+      scrollbar-width: thin;
+
+      button {
+        display: block;
+        width: 100%;
+        text-align: start;
+        padding: 0.375rem 0.75rem;
+        background: transparent;
+        border: none;
+        color: var(--color-text);
+        cursor: pointer;
+        font-size: inherit;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &:hover,
+        &.active {
+          background-color: var(--color-amber);
+          color: var(--color-amber-darker);
+        }
+      }
     }
   }
 

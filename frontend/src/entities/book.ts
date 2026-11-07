@@ -11,6 +11,7 @@ export class Book {
   author = ''
 
   narrators = new Array<string>()
+  tags = new Array<string>()
 
   runtime = ''
   ratings = 0
