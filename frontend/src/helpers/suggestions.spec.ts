@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { expect, it } from 'vitest'
 import { Book } from '@/entities/book.ts'
 import { Saga } from '@/entities/saga.ts'
 import { searchSuggestions } from '@/helpers/suggestions.ts'
