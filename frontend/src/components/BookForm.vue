@@ -131,6 +131,17 @@ const tagSuggestions = computed(() => {
     .filter((name) => !needle || loose(name).includes(needle))
 })
 
+// Tags déjà présents dans la bibliothèque (clés « loose » : casse et accents
+// ignorés, même règle que les suggestions) — une chip hors de cet ensemble est
+// un tag nouveau, créé avec le livre.
+const libraryTagKeys = computed(() => new Set(collectTags(bookStore.books).map((tag) => loose(tag.name))))
+
+const NEW_TAG_TITLE = 'Nouveau tag'
+
+function isKnownTag(tag: string): boolean {
+  return libraryTagKeys.value.has(loose(tag))
+}
+
 let lastSearch = ''
 let tagsFetchId = 0
 let abortController = new AbortController()
@@ -420,7 +431,13 @@ function reset(): void {
         <label :for="tagsInputId">
           <span>Tags</span>
           <div class="tags-box">
-            <span v-for="(tag, index) of tagChips" v-bind:key="tag" class="tag">
+            <span
+              v-for="(tag, index) of tagChips"
+              v-bind:key="tag"
+              class="tag"
+              :class="{ new: !isKnownTag(tag) }"
+              :title="isKnownTag(tag) ? undefined : NEW_TAG_TITLE"
+            >
               {{ tag }}
               <button
                 type="button"
@@ -707,6 +724,12 @@ form {
       background-color: color-mix(in oklab, var(--color-amber) 12%, transparent);
       border: 1px solid var(--color-amber);
       border-radius: 999px;
+
+      /* Tag absent de la bibliothèque : bordure pointillée — « brouillon »,
+         le tag sera créé avec le livre (info-bulle au survol). */
+      &.new {
+        border-style: dashed;
+      }
 
       .remove {
         display: flex;

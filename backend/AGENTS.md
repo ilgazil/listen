@@ -169,19 +169,24 @@ src/
 ### Commandes CLI
 - `app:scrap-book <ids...>` — re-scrape un livre depuis son scraper (Audible/Lizzie), propose les champs modifiés (confirmation interactive).
 - `app:batch` — nettoyage en lot (ex. normalisation de `tome` : extrait `[\d.]+`).
-- `app:scrap-tags [--dry-run] [--limit=N] [--scrap-id=<asin>] [--empty-only]` — va chercher les **tags (genres) de
-  la fiche Audible** de chaque livre de la bibliothèque (`AudibleScraper::tags()`, une page produit par livre) et
-  met à jour `Book.tags`. **Uniquement les livres `scraper=audible`** (Lizzie n'expose pas de tags) ; `--scrap-id`
-  cible un ASIN précis, `--limit` plafonne le nombre de pages fetchées (0 = pas de limite ; un livre sauté ne
-  consomme pas le quota), `--dry-run` affiche les changements sans flusher, `--empty-only` ne fetch que les livres
-  **sans tags** — les déjà taggés sont écartés sans consommer de fetch (reprise après murs : seuls les manques
-  re-partent chez Audible ; sans lui, une relance re-fetch tout, la comparaison triée ne protégeant que le flush,
-  pas le fetch). **Sécurités** : une fiche **réelle** sans genres ne vide **jamais** des tags existants (comptée
-  en skip) ; un **mur 503 épuisé** (page d'erreur ~2 Ko) fait **jeter** `tags()` → compté en échec et **retraité à
-  la relance** (distingué du skip ; combiner avec `--empty-only` pour la reprise) ; chaque échec est isolé par
-  livre (les autres continuent) ; comparaison **triée** (l'ordre des tags de la fiche n'est pas significatif) ;
-  flush **par livre** (interruption = ce qui est fait est sauvegardé) ; pause de 0,5 s entre deux fetches (mur
-  503 anti rate-limiting d'Audible, cf. « Pièges connus »).
+- `app:scrap-tags [--dry-run] [--limit=N] [--scrap-id=<asin>] [--scrap-ids=<id1,id2,…>] [--empty-only]` — va chercher les
+  **tags (genres) de la fiche Audible** de chaque livre de la bibliothèque (`AudibleScraper::tags()`, une page produit
+  par livre) et met à jour `Book.tags`. **Uniquement les livres `scraper=audible`** (Lizzie n'expose pas de tags) ;
+  `--scrap-id` cible un ASIN précis, `--scrap-ids` cible une **liste d'ASIN** (chaîne séparée par des virgules,
+  espaces et segments vides tolérés, doublons dédupliqués) : **relance des échecs** — après un run avec échecs, la
+  commande affiche, **après le résumé**, la ligne exacte à relancer une fois le **cooldown Audible** passé
+  (`php bin/console app:scrap-tags --scrap-ids=<ASIN échoués>`) : la relance ne re-fetch que ces fiches, sans
+  re-consommer le reste de la bibliothèque ni les fiches réellement sans tags ; `--limit` plafonne le nombre de pages
+  fetchées (0 = pas de limite ; un livre sauté ne consomme pas le quota), `--dry-run` affiche les changements sans
+  flusher, `--empty-only` ne fetch que les livres **sans tags** — les déjà taggés sont écartés sans consommer de
+  fetch (reprise après murs : seuls les manques re-partent chez Audible ; sans lui, une relance re-fetch tout, la
+  comparaison triée ne protégeant que le flush, pas le fetch). **Sécurités** : une fiche **réelle** sans genres ne
+  vide **jamais** des tags existants (comptée en skip) ; un **mur 503 épuisé** (page d'erreur ~2 Ko) fait **jeter**
+  `tags()` → compté en échec (ASIN listé pour la relance ciblée) et **retraité à la relance** (distingué du skip ;
+  combiner avec `--empty-only` pour la reprise) ; chaque échec est isolé par livre (les autres continuent) ;
+  comparaison **triée** (l'ordre des tags de la fiche n'est pas significatif) ; flush **par livre** (interruption =
+  ce qui est fait est sauvegardé) ; pause de 0,5 s entre deux fetches (mur 503 anti rate-limiting d'Audible, cf.
+  « Pièges connus »).
 - `app:migrate-1fichier --new-token=<clé> --new-folder-name=listen` — migration **one-shot** du stockage vers un
   autre compte 1Fichier : chaque fichier du dossier `API_1FICHIER_APP_FOLDER_ID` (compte source, **lecture seule**)
   est téléchargé puis ré-uploade sur le nouveau compte, et les `Book.id` sont mis à jour en base (le hash d'accès

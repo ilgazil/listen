@@ -6,11 +6,12 @@ import SectionNarrator from '@/components/SectionNarrator.vue'
 import SectionRuntime from '@/components/SectionRuntime.vue'
 import SectionSaga from '@/components/SectionSaga.vue'
 import IconEdit from '@/components/icons/IconEdit.vue'
+import IconTag from '@/components/icons/IconTag.vue'
 import CoverImage from '@/components/CoverImage.vue'
 import { useRouter } from 'vue-router'
 
-// linkTags=false (preview du formulaire) : la pastille reste informative —
-// tooltip au survol de la pastille seule, tags non cliquables.
+// linkTags=false (preview du formulaire) : le compteur reste informatif —
+// tooltip au survol du compteur seul, tags non cliquables.
 const { book, linkTags = true } = defineProps({
   book: Book,
   linkTags: { type: Boolean, default: true },
@@ -35,7 +36,8 @@ function goToTag(tag: string): void {
       <SectionRatings :ratings="book.ratings" class="ratings" />
 
       <span v-if="book.tags.length" class="tags" :class="{ link: linkTags }">
-        {{ book.tags.length }} tag{{ book.tags.length > 1 ? 's' : '' }}
+        <IconTag />
+        <span class="value">{{ book.tags.length }}</span>
 
         <span class="tooltip">
           <button
@@ -134,20 +136,30 @@ article {
       color: var(--color-amber);
     }
 
-    /* Pastille « N tag(s) » : les tags sont listés dans le panneau au survol.
+    /* Compteur de tags façon note : icône étiquette + nombre, sans cadre.
        Les sélecteurs de classe passent outre le `h2 span` générique
        (flex-grow/padding/text-align) — tout est réétabli explicitement. */
     .tags {
       position: relative;
-      display: inline-block;
+      display: flex;
+      align-items: center;
+      gap: 0.125rem;
       flex: none;
       margin-left: 0.375rem;
-      padding: 0.125rem 0.5rem;
-      font-size: 0.75rem;
+      font-size: 0.9rem;
       color: var(--color-amber);
-      border: 1px solid var(--color-amber);
-      border-radius: 999px;
       white-space: nowrap;
+
+      .value {
+        display: inline;
+        flex-grow: 0;
+        min-width: 0;
+        padding: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: left;
+        white-space: nowrap;
+      }
 
       .tooltip {
         position: absolute;
@@ -155,7 +167,13 @@ article {
         right: 0;
         display: flex;
         flex-direction: column;
-        max-width: 16rem;
+        /* Le panneau épouse le tag le plus long : un tag tient toujours en
+           entier sur la fiche (aucun plafond en bibliothèque). white-space
+           normal : le nowrap du compteur ne doit pas descendre dans le
+           panneau (sinon les tags longs débordent au lieu de passer à la
+           ligne quand le plafond de la preview s'applique). */
+        width: max-content;
+        white-space: normal;
         padding: 0.25rem 0.375rem;
         background-color: var(--color-background-mute);
         border: 1px solid var(--color-amber);
@@ -169,7 +187,7 @@ article {
           visibility 0.15s;
         pointer-events: none;
 
-        /* Pont invisible reliant pastille et panneau : en variante lien, le
+        /* Pont invisible reliant compteur et panneau : en variante lien, le
            survol ne coupe pas dans les 4 px d'écart quand on descend vers les
            tags (inerte sinon — pointer-events: none hérité). */
         &::before {
@@ -190,7 +208,6 @@ article {
           background: none;
           border: none;
           cursor: default;
-          overflow-wrap: anywhere;
         }
       }
 
@@ -213,6 +230,16 @@ article {
           color: var(--color-amber-lighter);
           text-shadow: 0 0 8px var(--color-amber-light);
         }
+      }
+    }
+
+    /* Preview du formulaire (sans `link`) : plafond à 16rem — un tag très
+       long passe à la ligne au lieu de déborder de la preview. */
+    .tags:not(.link) .tooltip {
+      max-width: 16rem;
+
+      .tag {
+        overflow-wrap: anywhere;
       }
     }
   }

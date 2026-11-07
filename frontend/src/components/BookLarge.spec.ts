@@ -35,18 +35,19 @@ function mountLarge(tags: Array<string>, options: { linkTags?: boolean; router?:
   })
 }
 
-describe('BookLarge — pastille tags', () => {
-  it('affiche « 1 tag » au singulier avec la liste au survol', () => {
+describe('BookLarge — compteur de tags', () => {
+  it('affiche l icône + le compteur 1 avec la liste au survol', () => {
     const wrapper = mountLarge(['Fantasy'])
 
-    expect(wrapper.find('.tags').text()).toContain('1 tag')
+    expect(wrapper.find('.tags svg.icon').exists()).toBe(true)
+    expect(wrapper.find('.tags .value').text()).toBe('1')
     expect(wrapper.findAll('.tag').map((s) => s.text())).toEqual(['Fantasy'])
   })
 
-  it('affiche « N tags » au pluriel avec tous les tags listés', () => {
+  it('affiche le compteur N avec tous les tags listés', () => {
     const wrapper = mountLarge(['Fantasy', 'Aventure', 'Épique'])
 
-    expect(wrapper.find('.tags').text()).toContain('3 tags')
+    expect(wrapper.find('.tags .value').text()).toBe('3')
     expect(wrapper.findAll('.tag').map((s) => s.text())).toEqual([
       'Fantasy',
       'Aventure',
@@ -54,7 +55,7 @@ describe('BookLarge — pastille tags', () => {
     ])
   })
 
-  it('masque la pastille quand le livre n a pas de tags', () => {
+  it('masque le compteur quand le livre n a pas de tags', () => {
     const wrapper = mountLarge([])
 
     expect(wrapper.find('.tags').exists()).toBe(false)

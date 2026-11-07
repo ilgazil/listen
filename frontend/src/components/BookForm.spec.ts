@@ -162,6 +162,35 @@ describe('BookForm — champ tags à chips', () => {
     expect(chipNames(wrapper)).toEqual(['Fantasy'])
   })
 
+  it('marque les tags absents de la bibliothèque comme nouveaux', async () => {
+    const wrapper = mountForm([libraryBook(['Fantasy'])])
+    const input = tagInput(wrapper)
+
+    await input.setValue('Fantasy')
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.setValue('Nouveau')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    const chips = wrapper.findAll('.tags-box .tag')
+    expect(chips).toHaveLength(2)
+    // « Fantasy » existe dans la bibliothèque : pas de marqueur.
+    expect(chips[0].classes()).not.toContain('new')
+    expect(chips[0].attributes('title')).toBeUndefined()
+    // « Nouveau » n'existe pas : bordure pointillée + info-bulle.
+    expect(chips[1].classes()).toContain('new')
+    expect(chips[1].attributes('title')).toBe('Nouveau tag')
+  })
+
+  it('reconnaît un tag connu sans casse ni accents', async () => {
+    const wrapper = mountForm([libraryBook(['Fantasy'])])
+    const input = tagInput(wrapper)
+
+    await input.setValue('FANTASY')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.findAll('.tags-box .tag')[0].classes()).not.toContain('new')
+  })
+
   it('exclut des suggestions les tags déjà en chips', async () => {
     const wrapper = mountForm([libraryBook(['Fantasy', 'Aventure'])])
     const input = tagInput(wrapper)

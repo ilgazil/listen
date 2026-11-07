@@ -174,11 +174,12 @@ La base de toutes les requêtes API est `API_BASE_URL` (`src/api/config.ts`), al
   `history.state.position` (borne `min` persistée en sessionStorage, suivi sur `router.afterEach` dans `main.ts`).
 - **Tags** (`helpers/tags.ts` + `helpers/suggestions.ts`, cf. `SPECS.md` § 3.1 et § 3.3) : le champ du formulaire
   est une **boîte à chips** avec autocomplétion sur les tags de la bibliothèque (collecte client — aucune table
-  de tags en base) ; l'index filtre via un **input de tag dédié** à droite de la recherche (suggestions de tags,
+  de tags en base ; une chip de tag **inconnu** porte une **bordure pointillée** + info-bulle : il sera créé avec
+  le livre) ; l'index filtre via un **input de tag dédié** à droite de la recherche (suggestions de tags,
   filtre appliqué seulement à la validation `Entrée`/suggestion — pas de filtrage à la saisie ; une fois validé,
   l'input devient **chip** et sa croix fait revenir l'input ; `?tag=…` ; une saga est affichée si au moins un de
   ses livres porte le tag, et la vignette montre alors tous ses livres). La fiche `BookLarge` porte une
-  **pastille « N tag(s) »** à côté de la note, tooltip au survol :
+  **compteur « icône étiquette + N »** (sans cadre, `IconTag`) à côté de la note, tooltip au survol :
   tags **cliquables → index filtré** (bibliothèque) mais **inertes dans la preview du formulaire**
   (`link-tags=false`). Le scrap des tags à la sélection d'une fiche Audible est inchangé (§ 4, endpoint
   `/api/scrap/tags`).

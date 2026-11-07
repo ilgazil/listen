@@ -77,11 +77,15 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
     à droite ; la vignette elle-même **n'est pas cliquable** — seul « Voir les livres » pointe vers `/saga/:id` —
     et cartes `BookLarge` pour les livres « normaux » (sans saga, ou saga à un seul livre).
     **Tri alphabétique** sur le nom de saga, sinon sur le titre du livre (`bookStore.works`).
-  - Mode **Livres** : grille de toutes les cartes `BookLarge` (tri alphabétique titre) ; **pastille « N tag(s) »**
-    (singulier/pluriel, masquée sans tags) à côté de la note dans l'en-tête — au survol, un panneau liste les tags
-    verticalement (fond `--color-background-mute`, bordure ambre). **Clic sur un tag → retour à l'index filtré**
-    (`/?tag=…`, glow au survol ; pont invisible pastille → panneau pour ne pas perdre le hover). **Preview du
-    formulaire : panneau inerte** (`pointer-events: none`, non cliquable, affiché au survol de la pastille seule).
+  - Mode **Livres** : grille de toutes les cartes `BookLarge` (tri alphabétique titre) ; **compteur de tags façon
+    note** — icône étiquette diagonale (`IconTag`, corps arrondi + œillet, axe « \\ ») + **nombre seul, sans cadre**
+    (masqué sans tags), à côté de la note dans l'en-tête — au survol, un panneau liste les tags
+    verticalement (fond `--color-background-mute`, bordure ambre) ; le panneau **épouse le tag le plus long**
+    (`width: max-content`, **aucun plafond en bibliothèque** — un tag tient toujours en entier) ; **preview du
+    formulaire : plafond 16rem** — un tag très long passe à la ligne (`overflow-wrap`), jamais de débordement
+    (le `white-space: nowrap` du compteur ne descend pas dans le panneau). **Clic sur un tag → retour à l'index filtré**
+    (`/?tag=…`, glow au survol ; pont invisible compteur → panneau pour ne pas perdre le hover). **Preview du
+    formulaire : panneau inerte** (`pointer-events: none`, non cliquable, affiché au survol du compteur seul).
     Présente sur toute fiche `BookLarge` (bibliothèque, isolés d'une saga, preview du formulaire) ; actions par
     carte : « Télécharger » (`LinkDownload`) et lien source Audible/Lizzie (`LinkScrapper`).
   - Cliquer sur une vignette saga → page dédiée **`/saga/:id`** (id local dérivé du nom de saga) : `SagaView`
@@ -152,6 +156,10 @@ Ordre des champs : Titre, Auteur, Narrateurs, Durée, Note, Saga, (Tome si saga)
   `:focus-within`) contenant les **chips** (petites pills ambre avec une croix à droite pour les retirer) puis
   un **input sans bordure** pour chercher ou saisir un tag. Les tags scrapés d'une fiche Audible pré-remplissent
   les chips (cf. § 3.1, `/add` étape 3) ; chaque chip est retirée individuellement (croix).
+  **Marqueur « tag nouveau »** : une chip dont le tag **n'existe pas dans la bibliothèque** (comparaison `loose()`
+  contre `collectTags(bookStore.books)`) porte une **bordure pointillée** et une info-bulle
+  (« Nouveau tag ») — il sera donc créé à l'enregistrement ; les chips connues restent à bordure pleine (reconnaissance
+  sans casse ni accents).
 - **Autocomplétion « à la manière des sagas »** : les suggestions viennent d'une **collecte des livres de la
   bibliothèque** (`collectTags()` dans `helpers/tags.ts` — pas de gestion de tags en base), **hors des chips
   déjà saisies** et filtrées sur le texte tapé (**casse et accents ignorés**, `loose()`). `Entrée` avec une
