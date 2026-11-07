@@ -64,6 +64,12 @@ php bin/phpunit
 # Utilitaires
 php bin/console debug:router
 php bin/console cache:clear
+
+# Prod (Infomaniak — config dans .deploy.env, cf. scripts/deploy.sh)
+make deploy    # make check (lint + tests + build) puis rsync + cache:clear
+make ssh       # shell interactif sur la prod (atterri dans le dossier de l app)
+make migrate   # applique les migrations de prod (via ssh)
+make ssh CMD="..."  # toute autre commande, exécutée depuis le dossier de l app
 ```
 
 ---

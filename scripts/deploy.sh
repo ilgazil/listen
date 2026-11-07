@@ -126,4 +126,4 @@ echo "→ cache:clear --env=prod"
 ssh "${SSH_OPTS[@]}" "$SSH_DEST" "cd $PROD_PATH && $PROD_PHP bin/console cache:clear --env=prod"
 
 echo "✅ Déploiement terminé : $(git rev-parse --short HEAD)${PROD_URL:+ → $PROD_URL}"
-echo "   Si des migrations sont en attente : $PROD_PHP bin/console doctrine:migrations:migrate (manuelle, à la volée)."
+echo "   Si des migrations sont en attente : make migrate (sinon à la main : $PROD_PHP bin/console doctrine:migrations:migrate)."

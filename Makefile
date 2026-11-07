@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install backend frontend db-up db-create db-migrate test test-backend test-frontend lint lint-backend lint-frontend format build check deploy deploy-dry ssh-key ssh-copy
+.PHONY: help install backend frontend db-up db-create db-migrate test test-backend test-frontend lint lint-backend lint-frontend format build check deploy deploy-dry ssh-key ssh-copy ssh migrate
 
 # Utilise Node 24 via nvm (le Node système par défaut est v20.9, hors `engines`).
 # Si nvm est absent, la commande tourne avec le Node système en place.
@@ -78,3 +78,9 @@ ssh-copy: ## Envoie la clé publique sur le serveur (dernière fois qu'un mot de
 	    exit 1; \
 	  fi; \
 	  echo "✅ Clé copiée sur $${PROD_HOST} — plus jamais de mot de passe pour make deploy"
+
+ssh: ## Shell interactif sur la prod (atterri dans le dossier de l app) — ou : make ssh CMD="..."
+	scripts/ssh.sh $(CMD)
+
+migrate: ## Applique les migrations de prod (via ssh — make ssh CMD="..." pour d'autres commandes)
+	@. .deploy.env && scripts/ssh.sh "$${PROD_PHP:-php} bin/console doctrine:migrations:migrate"
