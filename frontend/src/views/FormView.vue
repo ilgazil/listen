@@ -114,7 +114,6 @@ main {
   flex-grow: 1;
   justify-content: flex-start;
   align-items: center;
-  gap: 0.5rem;
   padding: 1rem;
   overflow: auto;
   scrollbar-color: var(--color-amber) transparent;

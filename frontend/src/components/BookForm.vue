@@ -304,42 +304,47 @@ function reset(): void {
     </div>
   </form>
 
+  <div class="separator" aria-hidden="true"></div>
+
   <div class="suggestions">
-    <div class="search">
-      <div class="search-input">
-        <input
-          type="text"
-          v-model="term"
-          @input="onSearchChange"
-          placeholder="Rechercher des métadonnées..."
-        />
-        <IconLoading v-if="loading" class="spinner" />
+    <div class="suggestions-scroll">
+      <div class="search">
+        <div class="search-input">
+          <input
+            type="text"
+            v-model="term"
+            @input="onSearchChange"
+            placeholder="Rechercher des métadonnées..."
+          />
+          <IconLoading v-if="loading" class="spinner" />
+        </div>
+        <button type="button" v-if="term" @click.prevent="closeSearch"><IconClose /></button>
       </div>
-      <button type="button" v-if="term" @click.prevent="closeSearch"><IconClose /></button>
+
+      <div class="results" v-if="books.length">
+        <BookCard
+          v-for="(book, index) of books"
+          v-bind:key="book.scrapId || index"
+          :book="book"
+          class="suggestion"
+          :class="{ selected: book.scrapId && `${book.scraper}#${book.scrapId}` === selectedSource }"
+          @click="select(book, true)"
+        />
+      </div>
+
+      <div v-else-if="searchError" class="empty">
+        {{ searchError }}
+        <button type="button" class="neon" @click="retrySearch">Réessaie</button>
+      </div>
+
+      <div v-else-if="term" class="empty">
+        Aucun résultat trouvé pour
+        <i>{{ term }}</i>
+        mais vous pouvez saisir manuellement les métadonnées !
+      </div>
     </div>
 
-    <div class="results" v-if="books.length">
-      <BookCard
-        v-for="(book, index) of books"
-        v-bind:key="book.scrapId || index"
-        :book="book"
-        class="suggestion"
-        :class="{ selected: book.scrapId && `${book.scraper}#${book.scrapId}` === selectedSource }"
-        @click="select(book)"
-      />
-    </div>
-
-    <div v-else-if="searchError" class="empty">
-      {{ searchError }}
-      <button type="button" class="neon" @click="retrySearch">Réessaie</button>
-    </div>
-
-    <div v-else-if="term" class="empty">
-      Aucun résultat trouvé pour
-      <i>{{ term }}</i
-      >
-      mais vous pouvez saisir manuellement les métadonnées !
-    </div>
+    <div class="suggestions-shade" aria-hidden="true"></div>
   </div>
 </template>
 
@@ -403,6 +408,7 @@ form {
     }
 
     .buttons {
+      margin-left: auto;
       display: flex;
       gap: 0.5rem;
     }
@@ -412,7 +418,7 @@ form {
       border-color: transparent;
       color: var(--color-amber-darker);
 
-      &:hover {
+      &:hover:not(:disabled) {
         background-color: var(--color-amber-light);
         color: var(--color-amber-darker);
         box-shadow: 0 0 10px var(--color-amber-light);
@@ -472,16 +478,60 @@ form {
   flex: none;
 }
 
+.separator {
+  flex: none;
+  height: 1px;
+  width: 100%;
+  margin-top: 6px;
+  background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-amber) 20%,
+      var(--color-amber) 80%,
+      transparent
+    );
+  box-shadow: 0 0 10px color-mix(in oklab, var(--color-amber) 45%, transparent);
+}
+
+.suggestions-shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1rem;
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.4), transparent);
+  mask-image: linear-gradient(to right, transparent, black 20%, black 80%, transparent);
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .suggestions-shade {
+    background:
+      linear-gradient(to bottom, black, transparent),
+      linear-gradient(to bottom, color-mix(in oklab, var(--color-amber) 14%, transparent), transparent);
+  }
+}
+
 .suggestions {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
   width: 100%;
-  max-height: 60vh;
-  overflow-y: auto;
-  scrollbar-color: var(--color-amber) transparent;
-  scrollbar-width: thin;
+  min-height: 0;
+
+  .suggestions-scroll {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-top: 1rem;
+    scrollbar-color: var(--color-amber) transparent;
+    scrollbar-width: thin;
+  }
 
   .search {
     display: flex;
