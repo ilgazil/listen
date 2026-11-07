@@ -41,6 +41,7 @@ class ScrapTagsCommand extends Command
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'List the changes without saving them.')
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of Audible pages to fetch (0 = no limit).', '0')
             ->addOption('scrap-id', null, InputOption::VALUE_REQUIRED, 'Only process the book matching this Audible ASIN.', '')
+            ->addOption('scrap-ids', null, InputOption::VALUE_REQUIRED, 'Only process these Audible ASINs (comma-separated list, e.g. "B00001,B00002").', '')
             ->addOption('empty-only', null, InputOption::VALUE_NONE, 'Only fetch books that have no tags yet — re-runs after failures only fill the gaps.');
     }
 
@@ -49,6 +50,7 @@ class ScrapTagsCommand extends Command
         $dryRun = (bool) $input->getOption('dry-run');
         $limit = max(0, (int) $input->getOption('limit'));
         $scrapId = (string) $input->getOption('scrap-id');
+        $scrapIds = $this->parseScrapIds((string) $input->getOption('scrap-ids'));
         $emptyOnly = (bool) $input->getOption('empty-only');
 
         // Les tags n'existent que sur les fiches Audible (Lizzie n'en expose pas).
@@ -59,6 +61,16 @@ class ScrapTagsCommand extends Command
 
         /** @var array<Book> $books */
         $books = $this->repository->findBy($criteria);
+
+        // Ciblage par liste d'ASIN (--scrap-ids=A,B) : relance des échecs de mur
+        // sans re-consommer les fiches réellement sans tags — filtrage après
+        // chargement (combiné à --scrap-id, il affine le ciblage).
+        if ($scrapIds !== []) {
+            $books = array_values(array_filter(
+                $books,
+                fn (Book $book) => in_array($book->getScrapId(), $scrapIds, true),
+            ));
+        }
 
         // Reprise : avec --empty-only, les livres déjà taggés sont écartés sans
         // consommer de fetch — une relance ne fetch que les manques (échecs de
@@ -83,6 +95,7 @@ class ScrapTagsCommand extends Command
         $updated = 0;
         $skipped = 0;
         $failures = 0;
+        $failedIds = [];
 
         foreach ($books as $book) {
             // La limite compte les fiches réellement fetchées : un livre sauté
@@ -107,9 +120,11 @@ class ScrapTagsCommand extends Command
                 $tags = $this->scraper->tags($book->getScrapId());
             } catch (\Throwable $e) {
                 // Un échec de scraping n'efface jamais les tags du livre : on
-                // passe au suivant (relancer la commande complètera).
+                // passe au suivant (relancer la commande complètera). Les ASIN
+                // échoués sont restitués en fin de run pour une relance ciblée.
                 $output->writeln(sprintf('[error] %s — %s', $book->getTitle(), $e->getMessage()));
                 ++$failures;
+                $failedIds[] = (string) $book->getScrapId();
                 continue;
             }
 
@@ -169,7 +184,28 @@ class ScrapTagsCommand extends Command
 
         $output->writeln($summary);
 
+        // Relance ciblée : les échecs sont presque toujours des murs anti-bot,
+        // à retenter après le cooldown d'Audible. La liste d'ASIN vise
+        // exactement ces livres — ni le reste de la bibliothèque, ni les
+        // fiches réellement sans tags qui consommeraient des fetches pour rien.
+        if ($failedIds !== []) {
+            $output->writeln('');
+            $output->writeln('Failed scrapings (Audible wall) — retry only those once the cooldown is over:');
+            $output->writeln(sprintf('  php bin/console app:scrap-tags --scrap-ids=%s', implode(',', $failedIds)));
+        }
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * Éclate la liste d'ASIN de --scrap-ids ("A,B" → ['A', 'B']) : trim des
+     * segments, segments vides et doublons ignorés.
+     */
+    private function parseScrapIds(string $raw): array
+    {
+        $ids = array_map('trim', explode(',', $raw));
+
+        return array_values(array_unique(array_filter($ids, fn (string $id) => $id !== '')));
     }
 
     /**

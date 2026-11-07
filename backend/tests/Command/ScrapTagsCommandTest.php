@@ -108,6 +108,74 @@ class ScrapTagsCommandTest extends TestCase
         self::assertSame(0, $tester->getStatusCode());
     }
 
+    public function testScrapIdsOptionTargetsListedBooksOnly(): void
+    {
+        $tagged = $this->createBook('B00001', 'Fantasy');
+        $first = $this->untaggedBook('B00002');
+        $second = $this->untaggedBook('B00003');
+
+        $scraper = $this->createMock(AudibleScraper::class);
+        $scraper->expects($this->exactly(2))->method('tags')->willReturn(['Aventure']);
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->exactly(2))->method('flush');
+
+        // Espaces et segments vides tolérés dans la liste.
+        $tester = $this->runCommand($entityManager, [$tagged, $first, $second], $scraper, ['--scrap-ids' => 'B00002, B00003 ,']);
+
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertSame(['Fantasy'], $tagged->getTags());
+        self::assertSame(['Aventure'], $first->getTags());
+        self::assertSame(['Aventure'], $second->getTags());
+        self::assertStringNotContainsString('--scrap-ids=', $tester->getDisplay());
+    }
+
+    public function testScrapIdsWithUnknownIdsProcessesNothing(): void
+    {
+        $book = $this->createBook('B00001', 'Fantasy');
+        $scraper = $this->createMock(AudibleScraper::class);
+        $scraper->expects($this->never())->method('tags');
+
+        $tester = $this->runCommand($this->createStub(EntityManagerInterface::class), [$book], $scraper, ['--scrap-ids' => 'B00099']);
+
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertStringContainsString('No book to process.', $tester->getDisplay());
+    }
+
+    public function testFailuresAreListedForTargetedRetry(): void
+    {
+        $broken = $this->untaggedBook('B00001');
+        $healthy = $this->createBook('B00002', 'Ancien');
+
+        $scraper = $this->createMock(AudibleScraper::class);
+        $scraper->expects($this->exactly(2))->method('tags')
+            ->willReturnOnConsecutiveCalls(
+                $this->throwException(new \RuntimeException('Audible wall: page too small')),
+                ['Aventure'],
+            );
+
+        $tester = $this->runCommand($this->createStub(EntityManagerInterface::class), [$broken, $healthy], $scraper);
+
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertStringContainsString('[error] Fantôme — Audible wall: page too small', $tester->getDisplay());
+        self::assertStringContainsString('retry only those once the cooldown is over:', $tester->getDisplay());
+        self::assertStringContainsString('php bin/console app:scrap-tags --scrap-ids=B00001', $tester->getDisplay());
+        // Le livre réussi ne fait pas partie de la relance ciblée.
+        self::assertStringNotContainsString('--scrap-ids=B00002', $tester->getDisplay());
+    }
+
+    public function testRetryHintIsAbsentWithoutFailures(): void
+    {
+        $book = $this->createBook('B00001', 'Ancien');
+        $scraper = $this->createStub(AudibleScraper::class);
+        $scraper->method('tags')->willReturn(['Fantasy']);
+
+        $tester = $this->runCommand($this->createStub(EntityManagerInterface::class), [$book], $scraper);
+
+        self::assertSame(0, $tester->getStatusCode());
+        self::assertStringNotContainsString('--scrap-ids=', $tester->getDisplay());
+    }
+
     public function testLimitStopsFetchingAfterNPages(): void
     {
         $first = $this->createBook('B00001', 'Ancien');
