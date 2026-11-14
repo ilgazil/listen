@@ -2,6 +2,7 @@
 
 namespace App\Tests\Service\Scraping\Audible;
 
+use App\Service\Scraping\AntiBotException;
 use App\Service\Scraping\Audible\AudibleScraper;
 use App\Service\Scraping\Audible\AudibleSeriesCache;
 use PHPUnit\Framework\TestCase;
@@ -294,6 +295,21 @@ class AudibleScraperTest extends TestCase
         self::assertNull($scraper->get('B01M2WSG6T'));
     }
 
+    public function testFromUrlThrowsAntiBotExceptionOnSmallErrorPage(): void
+    {
+        // Mur 503 en mode URL : l'exception remonte (le contrôleur la transforme
+        // en erreur 502 affichée sur le formulaire) — contrairement à get() qui
+        // reste null (contrat du re-scrap CLI).
+        $errorPage = '<html><body>Service Unavailable</body></html>';
+
+        $scraper = $this->scraper(fn (): string => $errorPage);
+
+        $this->expectException(AntiBotException::class);
+        $this->expectExceptionMessage('anti-bot');
+
+        $scraper->fromUrl('https://www.audible.fr/pd/Book/B01M2WSG6T');
+    }
+
     public function testGetReturnsNullOnUnavailableTitlePage(): void
     {
         // Page « titre indisponible » (livre retiré du catalogue) : une vraie page,
@@ -305,6 +321,68 @@ class AudibleScraperTest extends TestCase
         $scraper = $this->scraper(fn (): string => $page);
 
         self::assertNull($scraper->get('B000000000'));
+    }
+
+    public function testFromUrlScrapesTheProductPageFromTheUrlAsin(): void
+    {
+        if (!is_file(self::BOOK_FIXTURE)) {
+            self::markTestSkipped('fixture audible-book.html non présente (gitignorée).');
+        }
+
+        $urls = [];
+
+        $scraper = $this->scraper(function (string $url) use (&$urls): string {
+            $urls[] = $url;
+
+            return (string) file_get_contents(self::BOOK_FIXTURE);
+        });
+
+        // Slug éventuel + paramètres de tracking : l'ASIN est extrait de l'URL
+        // produit et la fiche est fetchée via productUrl (ipRedirectOverride).
+        $book = $scraper->fromUrl('https://www.audible.fr/pd/Le-Bourbon-Kid/B0TEST1234?ascsubtag=x');
+
+        self::assertNotNull($book);
+        self::assertCount(1, $urls);
+        self::assertStringContainsString('pd/Book/B0TEST1234', $urls[0]);
+        self::assertStringContainsString('ipRedirectOverride=true', $urls[0]);
+        self::assertSame('B01M2WSG6T', $book->getScrapId());
+    }
+
+    public function testFromUrlSupportsBareProductUrls(): void
+    {
+        if (!is_file(self::BOOK_FIXTURE)) {
+            self::markTestSkipped('fixture audible-book.html non présente (gitignorée).');
+        }
+
+        $urls = [];
+
+        $scraper = $this->scraper(function (string $url) use (&$urls): string {
+            $urls[] = $url;
+
+            return (string) file_get_contents(self::BOOK_FIXTURE);
+        });
+
+        self::assertNotNull($scraper->fromUrl('audible.fr/pd/B0TEST1234'));
+        self::assertStringContainsString('pd/Book/B0TEST1234', $urls[0]);
+    }
+
+    public function testFromUrlIgnoresUrlsWithoutAScrapablePage(): void
+    {
+        $fetched = false;
+
+        $scraper = $this->scraper(function (string $url) use (&$fetched): string {
+            $fetched = true;
+
+            return (string) file_get_contents(self::BOOK_FIXTURE);
+        });
+
+        // Hôte étranger, pages recherche/série d'Audible, simple terme : aucun
+        // fetch — la recherche classique prendra le relais côté contrôleur.
+        self::assertNull($scraper->fromUrl('https://exemple.com/pd/Book/B0TEST1234'));
+        self::assertNull($scraper->fromUrl('https://www.audible.fr/search?keywords=hobb'));
+        self::assertNull($scraper->fromUrl('https://www.audible.fr/series/LAssassin-Royal/'));
+        self::assertNull($scraper->fromUrl('juste trois mots'));
+        self::assertFalse($fetched);
     }
 
     public function testSeriesPageWithCurrentMarkupIsCachedForTheDay(): void

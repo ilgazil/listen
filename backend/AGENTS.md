@@ -153,6 +153,13 @@ src/
   - **Fusion** : `SearchRanker::merge()` — score, dédup titre+auteur, tri pertinence, plafond 30.
   - **Filtre** : les résultats Audible sans narrateur sont écartés (dans `AudibleSearchParser::getBooks()`).
   - **Résilience** : chaque scraper est isolé par try/catch — un échec ne prive jamais l'autre source de résultats.
+- `GET /api/scrap/url?url=...` — **scrap direct de la fiche d'une URL produit** (toggle « URL » du formulaire de
+  saisie) : chaque scraper tente `fromUrl($url)` (Audible d'abord, puis Lizzie), la première fiche non nulle est
+  renvoyée seule (`[ Book JSON ]`, même sérialisation que la recherche). `url` absent, hôte inconnu, page non
+  produit ou échec générique (attrapé et loggé) → **200** + `[]` (saisie manuelle possible). **Mur anti-bot** →
+  **502** + `{"error": "…"}` — message français du scraper (`AntiBotException`, mur 503 épuisé après retries :
+  page trop petite) affiché tel quel sur le formulaire, fiche réessayable après cooldown. `get()` reste null sur
+  mur (contrat du re-scrap CLI) ; seul `fromUrl()` laisse l'exception remonter.
 - `GET /api/scrap/tags?scraper=audible&scrap_id=…` — tags (genres) de la **fiche** Audible d'un livre
   (`{"tags": [...]}`) : ils n'apparaissent que sur la fiche produit, pas sur les pages recherche/série. Le frontend
   les demande à la sélection d'une suggestion du formulaire. **400** si `scraper` ≠ `audible` ou `scrap_id` absent ;
@@ -210,7 +217,8 @@ src/
 ## Services
 
 ### Scraping
-- `ScraperInterface` : `search(string): array`, `get(string): ?Book`.
+- `ScraperInterface` : `search(string): array`, `get(string): ?Book`, `fromUrl(string): ?Book` (fiche depuis une
+  URL produit passée à `GET /api/scrap/url` — null si l'URL n'appartient pas au scraper ou ne donne rien).
 - **Audible** (`AudibleScraper`) : `Fetcher::get` sur `audible.fr` + **parsing regex/JSON du HTML**
   (`AudibleSearchParser`, `AudibleBookParser`). Extrait : id, cover, title, saga/tome (`computeSagaMetadata()`),
   author, narrators, runtime, ratings. Le parsing est fragile par nature (dépend du markup Audible).
@@ -238,6 +246,9 @@ src/
   retraitable. **URL produit** (`pd/Book/…`) : `?ipRedirectOverride=true` — Audible juge parfois l'IP « non FR »
   et redirige les fiches vers audible.de (accueil ~95 Ko, au-dessus du seuil de page réelle : 0 tag, fiche
   fantôme) ; le paramètre (mécanisme d'Audible) garantit la fiche FR, le slug se rétablissant dans la redirection.
+  **Recherche par URL** (`fromUrl()`) : une URL produit audible passée à `GET /api/scrap/url` (hôte `audible.*`
+  requis, slug et tracking tolérés, ASIN de 10 caractères extrait de `/pd/…`) est scrapée directement via `get()` —
+  null pour toute autre URL.
   **Enrichissement série** : dès qu'une saga dont le **nom matche la recherche dans un des deux sens** (score
   ≥ `MIN_SERIES_SCORE` : tous les mots du pattern dans le nom, ou le nom de la saga contenu dans la recherche)
   a un lien « Série : … » dans les résultats, sa page série est scrapée (elle liste la saga complète — même si un
@@ -248,7 +259,8 @@ src/
   `public/cache/audible`, les deux markups sont mis en cache). Échec = résultats de la recherche seule.
 - **Lizzie** (`LizzieScraper`) : utilise `LizzieCache` — un JSON du catalogue (`lizzie-api.staytuned.io/v1/catalog`)
   mis en cache **une fois par jour** dans `public/cache/lizzie/cache_YYYY-MM-DD.json`. Extrait : title, author, cover,
-  runtime, narrators (un seul champ). Pas de ratings ni saga/tome.
+  runtime, narrators (un seul champ). Pas de ratings ni saga/tome. `fromUrl()` : première passe — retourne toujours
+  `null` (une URL lizzie.audio donne une liste vide sur `GET /api/scrap/url`).
 - **`SearchRanker`** (statique) : `normalize()` (translittération accents, minuscules, ponctuation → espaces),
   `words()`, `score()` (hiérarchie titre égal > commence par > contient > tous les mots > partiel),
   `merge()` (fusion scorée des sources, dédup titre+auteur, plafond 30). Utilisé par `ScrapController`

@@ -295,6 +295,34 @@ endpoint n'accepte que `scraper=audible`.
 | **200** | `{"tags": ["Fantasy", "Épique", …]}` | succès (liste vide = fiche sans tags ou échec de scrap) |
 | **400** | `{"error": "Unknown scraper or missing scrap_id."}` | scraper non supporté ou id absent |
 
+### 4.9 `GET /api/scrap/url?url=…`
+
+**Objectif** : **scrap direct de la fiche** d'une URL produit collée par l'utilisateur — le toggle « URL » du
+formulaire de saisie (à gauche du champ de recherche, « Recherche » par défaut) l'appelle via `searchByUrl()`.
+
+#### Flux
+
+1. `url` absent ou vide (après trim) → **200** + `[]`.
+2. Chaque scraper tente `ScraperInterface::fromUrl($url)` (Audible d'abord, puis Lizzie) : la **première fiche non
+   nulle** est renvoyée seule — `[ Book JSON ]`, même sérialisation que la recherche (`groups: ['book:read']`,
+   `iri: false`, `skip_null_values: true`, `api_platform_disable: true`).
+3. `AudibleScraper::fromUrl` : extraction de l'ASIN d'une URL produit (`audible.*/pd/…/{ASIN}` — slug éventuel et
+   tracking tolérés, ASIN de 10 caractères alphanumériques, dièses des classes de caractères du regex **échappés**)
+   puis `get()` (retries + `ipRedirectOverride`). `LizzieScraper::fromUrl` : première passe, toujours `null`.
+4. **Mur anti-bot** (page d'erreur trop petite après retries) : `AudibleScraper::fromUrl` jette `AntiBotException`
+   (message français destiné à l'affichage) → le contrôleur répond **502** + `{"error": "…"}` — sauf si un autre
+   scraper a fourni la fiche. Les autres échecs (réseau…) sont attrapés et loggués → 200 + `[]`.
+5. Aucune fiche sans exception (hôte inconnu, page recherche/série, fiche retirée du catalogue) → **200** + `[]`
+   — jamais d'erreur propagée, la saisie manuelle reste possible.
+
+#### Réponses
+
+| Statut | Corps | Cas |
+|--------|-------|-----|
+| **200** | `[ Book JSON ]` | fiche trouvée (1 seul élément) |
+| **200** | `[]` | `url` absent, URL non reconnue, fiche introuvable ou échec générique |
+| **502** | `{"error": "…"}` | mur anti-bot (message affiché tel quel sur le formulaire, réessayable) |
+
 ---
 
 ## 5. Schéma de données

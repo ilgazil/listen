@@ -99,8 +99,14 @@ src/
   `fetchBooks()` revalide à chaque appel (`If-None-Match` + `cache: 'no-cache'`) et réutilise la liste en cache sur
   304 (même référence → `$patch` no-op). `clearBooksCache()` reset ce cache (tests / refresh forcé).
 - `GET /api/scrap?pattern=…` → `Book[]` — recherche de métadonnées fusionnée Audible + Lizzie (`search()`),
-  **classée par pertinence côté backend** ; résultats non vides mis en cache client (`clearSearchCache()` pour
-  reset) ; `signal` optionnel pour annuler (`AbortSignal`).
+  **classée par pertinence côté backend** ; pattern normalisé côté client avant envoi (`normalizeSearch()`);
+  résultats non vides mis en cache (`clearSearchCache()` pour reset) ; `signal` optionnel pour annuler
+  (`AbortSignal`).
+- `GET /api/scrap/url?url=…` → `Book[]` — **scrap direct de la fiche d'une URL produit** (`searchByUrl()`),
+  appelé par le toggle « URL » du formulaire (à gauche du champ de recherche, « Recherche » par défaut) ;
+  l'URL part intacte ; `[]` si aucune fiche (hôte inconnu…) ; **502 + `{"error": "…"}` si le scrap est bloqué**
+  (anti-bot) — le message du backend est affiché tel quel (`ScrapError`) ; cache client partagé avec la
+  recherche (clé = URL trimée).
 - `GET /api/scrap/tags?scraper=audible&scrap_id=…` → `{ tags: string[] }` — tags (genres) de la **fiche** Audible
   (`scrapTags()`, appelé à la sélection d'une suggestion du formulaire) ; résultats non vides mis en cache client
   (`clearTagsCache()` pour reset). Absents des pages recherche/série ; Lizzie n'en expose pas (endpoint refusé).

@@ -124,8 +124,16 @@ Ce document capture le comportement actuel, le contrat API et les fonctionnalit�
 
 ### 3.2 Recherche de métadonnées
 
+- La recherche de métadonnées porte un **toggle Recherche/URL** (à gauche du champ, même style que le toggle
+  Sagas/Livres de la bibliothèque ; « Recherche » par défaut). Mode **Recherche** : comportement historique
+  (recherche par termes). Mode **URL** : la saisie est une URL de fiche, scrapée directement via
+  `searchByUrl()` → `GET /api/scrap/url` ; placeholder dédié (« Coller l'URL d'une fiche... »), message vide
+  dédié (« Impossible de récupérer des métadonnées sur cette URL »), et la bascule **réinitialise la saisie**
+  (et les résultats/spinner/erreur — départ propre dans le nouveau mode). En cas de blocage anti-bot, le
+  backend répond 502 + message (`ScrapError`) affiché tel quel dans la zone d'erreur (bouton « Réessaie »).
 - `normalizeSearch()` (`api/book.ts`) : minuscules, suppression des accents (NFD), caractères non alphanumériques → espaces,
-  retrait des caractères isolés. Envoyé tel quel à `GET api/scrap?pattern=…`.
+  retrait des caractères isolés. Envoyé tel quel à `GET api/scrap?pattern=…` (le mode URL passe par l'endpoint
+  dédié : une URL n'est jamais normalisée avant l'envoi).
 - Réponse : fusion des scrapers **Audible** (page audible.fr) et **Lizzie** (catalogue en cache), **classée par
   pertinence côté backend** (`SearchRanker::merge()` : scoring, dédup titre+auteur, plafond 30 ; matching Lizzie
   tolérant aux accents/apostrophes et à l'ordre des mots). Un livre Audible **sans narrateur est filtré côté
@@ -307,6 +315,14 @@ client présente la liste via `If-None-Match`. Le frontend revalide à chaque `f
 [ /* Book JSON, même forme */ ]
 ```
 Recherche fusionnée Audible + Lizzie. (Livres Audible sans narrateur filtrés.)
+
+### `GET /api/scrap/url?url=…`
+```json
+[ /* Book JSON, même forme — 0 ou 1 élément */ ]
+```
+Scrap direct de la fiche d'une URL produit (toggle « URL » du formulaire) ; `[]` si aucune fiche (hôte inconnu,
+fiche introuvable) ; **502 + `{"error": "…"}`** si le scrap est bloqué (anti-bot) — `searchByUrl()` rejette avec
+un `ScrapError` portant ce message, affiché tel quel dans la zone d'erreur du formulaire (bouton « Réessaie »).
 
 ### `GET /api/scrap/tags?scraper=audible&scrap_id=…`
 ```json

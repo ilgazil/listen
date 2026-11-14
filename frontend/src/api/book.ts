@@ -129,6 +129,7 @@ export function clearBooksCache(): void {
 // Cache mémoire des recherches : /api/scrap scrape Audible côté serveur (lent),
 // retaper la même recherche ne doit pas re-scrape. Seuls les résultats non vides
 // sont mis en cache (un échec ou un « aucun résultat » doit pouvoir réessayer).
+// Clés : forme normalisée du pattern (recherche par termes) ou URL trimée (mode URL).
 const searchCache = new Map<string, Array<Book>>()
 const SEARCH_CACHE_MAX = 50
 
@@ -137,23 +138,39 @@ export function clearSearchCache(): void {
   searchCache.clear()
 }
 
-export async function search(pattern: string, signal?: AbortSignal): Promise<Array<Book>> {
-  const key = normalizeSearch(pattern)
+// Erreur portant un message destiné à l'affichage direct sur le formulaire :
+// échec décrit par le backend (anti-bot…) ou requête réseau sonnée.
+export class ScrapError extends Error {}
 
-  if (!key) {
-    return []
-  }
+const REQUEST_FAILED = 'La requête a échoué. Vérifie la connexion puis réessaie.'
 
+async function cachedScrap(key: string, path: string, signal?: AbortSignal): Promise<Array<Book>> {
   const cached = searchCache.get(key)
 
   if (cached) {
     return cached
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}/api/scrap?pattern=${encodeURIComponent(key)}`,
-    ...(signal ? [{ signal }] : []),
-  )
+  let response: Response
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, ...(signal ? [{ signal }] : []))
+  } catch (error) {
+    // Abort : laissé tel quel (le formulaire jette les réponses périmées).
+    if ((error as Error)?.name === 'AbortError') {
+      throw error
+    }
+
+    throw new ScrapError(REQUEST_FAILED)
+  }
+
+  if (!response.ok) {
+    // Le backend décrit l'échec (anti-bot…) : message affiché tel quel.
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+
+    throw new ScrapError(payload?.error ?? REQUEST_FAILED)
+  }
+
   const books = bookCollectionFromApi(await response.json())
 
   if (books.length) {
@@ -169,6 +186,28 @@ export async function search(pattern: string, signal?: AbortSignal): Promise<Arr
   }
 
   return books
+}
+
+export async function search(pattern: string, signal?: AbortSignal): Promise<Array<Book>> {
+  const key = normalizeSearch(pattern)
+
+  if (!key) {
+    return []
+  }
+
+  return cachedScrap(key, `/api/scrap?pattern=${encodeURIComponent(key)}`, signal)
+}
+
+// Scrap direct de la fiche d'une URL produit collée par l'utilisateur
+// (toggle « URL » du formulaire) : endpoint dédié, l'URL part intacte.
+export async function searchByUrl(url: string, signal?: AbortSignal): Promise<Array<Book>> {
+  const key = url.trim()
+
+  if (!key) {
+    return []
+  }
+
+  return cachedScrap(key, `/api/scrap/url?url=${encodeURIComponent(key)}`, signal)
 }
 
 // Cache mémoire des tags de fiches : le scrap de la fiche Audible est lent

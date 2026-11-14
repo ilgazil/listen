@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
-import { search, scrapTags } from '@/api/book.ts'
+import { ScrapError, search, searchByUrl, scrapTags } from '@/api/book.ts'
 import { Book } from '@/entities/book.ts'
 import { Saga } from '@/entities/saga.ts'
 import { collectTags, loose } from '@/helpers/tags.ts'
@@ -33,6 +33,13 @@ const books = ref<Array<Book>>([])
 const loading = ref(false)
 const searchError = ref('')
 const term = ref('')
+// Mode de la recherche de métadonnées : par termes (« Recherche ») ou scrap
+// direct d'une URL de fiche collée (« URL », endpoint backend dédié).
+const searchMode = ref<'search' | 'url'>('search')
+// Placeholder du champ selon le mode (collage d'URL vs recherche par termes).
+const searchPlaceholder = computed(() =>
+  searchMode.value === 'url' ? "Coller l'URL d'une fiche..." : 'Rechercher des métadonnées...',
+)
 const selectedSource = ref('')
 // Le label du champ tags enveloppe aussi les chips (des boutons) : sans
 // association explicite, le contrôle du label serait la PREMIÈRE croix
@@ -307,7 +314,10 @@ function onSearchChange(): void {
     loading.value = true
 
     try {
-      const results = await search(current, abortController.signal)
+      const results =
+        searchMode.value === 'url'
+          ? await searchByUrl(current, abortController.signal)
+          : await search(current, abortController.signal)
 
       // Une recherche plus récente a été lancée entre-temps : on jette ce résultat.
       if (lastSearch !== current) {
@@ -320,14 +330,31 @@ function onSearchChange(): void {
         return
       }
 
-      // Le spinner est débloqué et l'erreur affichée : avant, un échec le laissait tourner.
-      searchError.value = 'La recherche a échoué. Vérifie la connexion puis réessaie.'
+      // Le spinner est débloqué et l'erreur affichée : avant, un échec le laissait
+      // tourner. ScrapError porte un message affichable (anti-bot…) ; le reste
+      // (bug, réponse illisible) garde le message générique.
+      searchError.value =
+        err instanceof ScrapError
+          ? err.message
+          : 'La recherche a échoué. Vérifie la connexion puis réessaie.'
     } finally {
       if (lastSearch === current) {
         loading.value = false
       }
     }
   }, 200)
+}
+
+function setSearchMode(mode: 'search' | 'url'): void {
+  if (searchMode.value === mode) {
+    return
+  }
+
+  searchMode.value = mode
+
+  // Départ propre dans le nouveau mode : saisie, résultats, spinner et erreur
+  // réinitialisés (même remise à zéro que la croix du champ).
+  closeSearch()
 }
 
 function retrySearch(): void {
@@ -509,12 +536,28 @@ function reset(): void {
   <div class="suggestions">
     <div class="suggestions-scroll">
       <div class="search">
+        <div class="toggle">
+          <button
+            type="button"
+            :class="{ active: searchMode === 'search' }"
+            @click="setSearchMode('search')"
+          >
+            Recherche
+          </button>
+          <button
+            type="button"
+            :class="{ active: searchMode === 'url' }"
+            @click="setSearchMode('url')"
+          >
+            URL
+          </button>
+        </div>
         <div class="search-input">
           <input
             type="text"
             v-model="term"
             @input="onSearchChange"
-            placeholder="Rechercher des métadonnées..."
+            :placeholder="searchPlaceholder"
           />
           <IconLoading v-if="loading" class="spinner" />
         </div>
@@ -542,9 +585,14 @@ function reset(): void {
       <div v-else-if="loading && term" class="empty">Recherche en cours</div>
 
       <div v-else-if="term" class="empty">
-        Aucun résultat trouvé pour
-        <i>{{ term }}</i>
-        mais vous pouvez saisir manuellement les métadonnées !
+        <template v-if="searchMode === 'url'">
+          Impossible de récupérer des métadonnées sur cette URL
+        </template>
+        <template v-else>
+          Aucun résultat trouvé pour
+          <i>{{ term }}</i>
+          mais vous pouvez saisir manuellement les métadonnées !
+        </template>
       </div>
     </div>
 
@@ -865,9 +913,47 @@ form {
     scrollbar-width: thin;
   }
 
+  .toggle {
+    display: flex;
+    flex-shrink: 0;
+
+    button {
+      display: flex;
+      align-items: center;
+      padding: 0 0.75rem;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      background-color: transparent;
+      border: 1px solid var(--color-amber);
+      color: var(--color-amber);
+      cursor: pointer;
+      transition: 0.4s;
+
+      &:first-child {
+        border-radius: 999px 0 0 999px;
+      }
+
+      &:last-child {
+        border-radius: 0 999px 999px 0;
+      }
+
+      & + button {
+        border-left: none;
+      }
+
+      &.active,
+      &:hover {
+        background-color: var(--color-amber);
+        color: var(--color-amber-darker);
+      }
+    }
+  }
+
   .search {
     display: flex;
-    align-items: center;
+    /* Alignement étiré : le toggle (et la croix) épousent la hauteur de
+       l'input — celle-ci fait foi, quelle que soit sa police/padding. */
+    align-items: stretch;
     gap: 0.25rem;
     width: 100%;
     max-width: 28rem;

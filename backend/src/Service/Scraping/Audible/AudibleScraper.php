@@ -3,10 +3,10 @@
 namespace App\Service\Scraping\Audible;
 
 use App\Entity\Book;
+use App\Service\Scraping\AntiBotException;
 use App\Service\Scraping\Fetcher;
 use App\Service\Scraping\ScraperInterface;
 use App\Service\Scraping\SearchRanker;
-use RuntimeException;
 use Throwable;
 
 class AudibleScraper implements ScraperInterface
@@ -210,30 +210,35 @@ class AudibleScraper implements ScraperInterface
 
     public function get(string $code): Book|null
     {
-        // Retries comme pour les pages série : la fiche reçoit elle aussi la 503
-        // anti rate-limiting (page d'erreur ~2 Ko, sans status HTTP d'échec côté
-        // cURL). Une page trop petite est un mur, pas une fiche : parser la page
-        // d'erreur produirait un livre vide (effacement des champs au re-scrap).
-        $body = $this->fetchWithRetry(
-            $this->productUrl($code),
-            self::MAX_SERIES_ATTEMPTS,
-            self::SERIES_RETRY_DELAY,
-        );
-
-        if (strlen($body) <= self::MIN_REAL_PAGE_BYTES) {
+        try {
+            $body = $this->fetchProductPage($code);
+        } catch (AntiBotException) {
+            // Mur 503 épuisé : pas de livre fantôme à partir d'une page d'erreur
+            // (effacement des champs au re-scrap). Le contrat de get() reste null ;
+            // fromUrl() laisse l'exception remonter pour l'erreur explicite du form.
             return null;
         }
 
-        $book = (new AudibleBookParser($body))->createBook();
+        return $this->parseProductPage($body);
+    }
 
-        // Page « titre indisponible » (livre retiré du catalogue) : ni URL canonique
-        // ni data-asin — pas un livre, sinon le re-scrap proposerait d'écraser les
-        // champs du livre par le contenu de la page d'erreur.
-        if ($book->getScrapId() === '') {
+    /**
+     * Fiche depuis une URL passée à GET /api/scrap/url : l'ASIN est extrait de
+     * l'URL produit (/pd/…/{ASIN} — slug éventuel devant l'ASIN) et la fiche est
+     * fetchée comme pour get() (retries, ipRedirectOverride). Null si l'URL n'est
+     * pas une fiche Audible (autre hôte, page recherche/série…). Jette
+     * AntiBotException quand le mur anti-bot épuise les retries : le contrôleur
+     * la transforme en erreur explicite pour le formulaire.
+     */
+    public function fromUrl(string $url): Book|null
+    {
+        // Délimiteur « # » : les dièses des classes de caractères sont échappés
+        // (sans quoi ils termineraient le motif).
+        if (preg_match('#audible\.[a-z.]+/pd/(?:[^/?\#]+/)*([A-Za-z0-9]{10})(?:[/?\#]|$)#i', $url, $matches) !== 1) {
             return null;
         }
 
-        return $book;
+        return $this->parseProductPage($this->fetchProductPage(strtoupper($matches[1])));
     }
 
     /**
@@ -255,10 +260,48 @@ class AudibleScraper implements ScraperInterface
         // ne retraiterait jamais le livre). Le contrôleur frontend attrape et
         // sert son contrat 200 + tags: [].
         if (strlen($html) <= self::MIN_REAL_PAGE_BYTES) {
-            throw new RuntimeException(sprintf('Audible wall for %s: page too small (%d bytes).', $code, strlen($html)));
+            throw new AntiBotException(sprintf('Audible wall for %s: page too small (%d bytes).', $code, strlen($html)));
         }
 
         return (new AudibleBookParser($html))->getTags();
+    }
+
+    /**
+     * Fiche fetchée avec retries (503 anti rate-limiting, page d'erreur ~2 Ko
+     * sans status HTTP d'échec côté cURL). Une page trop petite est un mur, pas
+     * une fiche : parser la page d'erreur produirait un livre vide (effacement
+     * des champs au re-scrap). Jette AntiBotException quand le mur épuise les
+     * retries — le message est affiché tel quel sur le formulaire.
+     */
+    private function fetchProductPage(string $code): string
+    {
+        $body = $this->fetchWithRetry(
+            $this->productUrl($code),
+            self::MAX_SERIES_ATTEMPTS,
+            self::SERIES_RETRY_DELAY,
+        );
+
+        if (strlen($body) <= self::MIN_REAL_PAGE_BYTES) {
+            throw new AntiBotException('Le scrap de la fiche a été bloqué par l\'anti-bot d\'Audible : réessaie dans quelques minutes.');
+        }
+
+        return $body;
+    }
+
+    /**
+     * Livre parsé depuis une page fiche réelle. Page « titre indisponible »
+     * (livre retiré du catalogue : ni URL canonique ni data-asin) → null, sinon
+     * le re-scrap proposerait d'écraser les champs du livre par la page d'erreur.
+     */
+    private function parseProductPage(string $body): Book|null
+    {
+        $book = (new AudibleBookParser($body))->createBook();
+
+        if ($book->getScrapId() === '') {
+            return null;
+        }
+
+        return $book;
     }
 
     protected function fetch(string $url): string

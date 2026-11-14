@@ -62,4 +62,13 @@ class LizzieScraper implements ScraperInterface
 
         return null;
     }
+
+    /**
+     * Première passe : le scrap d'URL Lizzie n'est pas câblé — une URL
+     * lizzie.audio retombe sur la recherche classique (null).
+     */
+    public function fromUrl(string $url): Book|null
+    {
+        return null;
+    }
 }

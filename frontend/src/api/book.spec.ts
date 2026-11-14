@@ -8,6 +8,7 @@ import {
   reportUploadCut,
   scrapTags,
   search,
+  searchByUrl,
   updateBook,
   uploadBook,
 } from '@/api/book.ts'
@@ -239,6 +240,63 @@ describe('search', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/scrap?pattern=signal%20test', {
       signal: controller.signal,
     })
+  })
+})
+
+describe('searchByUrl', () => {
+  it('appelle l endpoint dédié avec l URL encodée', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify([])))
+
+    const url = 'https://www.audible.fr/pd/Book/B0C2XYPG4F?ascsubtag=x'
+
+    await searchByUrl(url)
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/scrap/url?url=${encodeURIComponent(url)}`)
+  })
+
+  it('retourne une liste vide sans URL', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify([])))
+
+    expect(await searchByUrl('   ')).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('met en cache une URL déjà scrapée (clé = URL trimée)', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify([{ scrap_id: 'B1', title: 'Dune', cover: '', author: 'F. Herbert' }]),
+      ),
+    )
+
+    const first = await searchByUrl('https://www.audible.fr/pd/Book/B1')
+    const second = await searchByUrl('  https://www.audible.fr/pd/Book/B1  ')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(second).toBe(first)
+  })
+
+  it('rejette avec le message backend en cas d anti-bot (502)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Le scrap de la fiche a été bloqué par l\'anti-bot d\'Audible : réessaie dans quelques minutes.' }), {
+        status: 502,
+      }),
+    )
+
+    await expect(searchByUrl('https://www.audible.fr/pd/Book/B1')).rejects.toThrow(
+      'Le scrap de la fiche a été bloqué par l\'anti-bot d\'Audible : réessaie dans quelques minutes.',
+    )
+  })
+
+  it('rejette avec le message générique sur une réponse non JSON', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Bad Gateway', { status: 502 }))
+
+    await expect(searchByUrl('https://www.audible.fr/pd/Book/B1')).rejects.toThrow(
+      'La requête a échoué. Vérifie la connexion puis réessaie.',
+    )
   })
 })
 

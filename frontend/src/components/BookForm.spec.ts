@@ -3,10 +3,12 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BookForm from '@/components/BookForm.vue'
 import { Book } from '@/entities/book.ts'
+import { ScrapError } from '@/api/book.ts'
 import { useBookStore } from '@/stores/book.ts'
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
+  searchByUrl: vi.fn(),
   scrapTags: vi.fn(),
 }))
 
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/book.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/book.ts')>()),
   search: mocks.search,
+  searchByUrl: mocks.searchByUrl,
   scrapTags: mocks.scrapTags,
 }))
 
@@ -240,6 +243,74 @@ describe('BookForm — champ tags à chips', () => {
     resolveSearch([])
     await flushPromises()
     expect(wrapper.find('.suggestions .empty').text()).toContain('Aucun résultat')
+  })
+
+  it('recherche par termes par défaut, par URL en mode « URL »', async () => {
+    mocks.search.mockResolvedValue([audibleBook()])
+    const wrapper = mountForm()
+
+    // Toggle présent, « Recherche » actif par défaut.
+    const toggleButtons = wrapper.findAll('.toggle button')
+    expect(toggleButtons).toHaveLength(2)
+    expect(toggleButtons[0].classes()).toContain('active')
+
+    await wrapper.find('.search-input input').setValue('hobb')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    expect(mocks.search).toHaveBeenCalledTimes(1)
+    expect(mocks.searchByUrl).not.toHaveBeenCalled()
+
+    // Bascule « URL » : placeholder dédié et saisie réinitialisée (départ propre,
+    // la recherche par termes n'est plus appelée).
+    mocks.searchByUrl.mockResolvedValue([audibleBook()])
+    await toggleButtons[1].trigger('click')
+    expect((wrapper.find('.search-input input').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('.search-input input').attributes('placeholder')).toBe(
+      "Coller l'URL d'une fiche...",
+    )
+
+    await wrapper.find('.search-input input').setValue('https://www.audible.fr/pd/Book/B01M2WSG6T')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    expect(mocks.searchByUrl).toHaveBeenCalledWith(
+      'https://www.audible.fr/pd/Book/B01M2WSG6T',
+      expect.anything(),
+    )
+    expect(mocks.search).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('.suggestion')).toHaveLength(1)
+  })
+
+  it('affiche le message dédié quand l URL ne donne rien', async () => {
+    mocks.searchByUrl.mockResolvedValue([])
+    const wrapper = mountForm()
+
+    await wrapper.findAll('.toggle button')[1].trigger('click')
+    await wrapper.find('.search-input input').setValue('https://www.audible.fr/pd/Book/B01M2WSG6T')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    expect(wrapper.find('.suggestions .empty').text()).toBe(
+      'Impossible de récupérer des métadonnées sur cette URL',
+    )
+  })
+
+  it('affiche l erreur backend (anti-bot) avec le bouton Réessaie', async () => {
+    mocks.searchByUrl.mockRejectedValue(
+      new ScrapError(
+        "Le scrap de la fiche a été bloqué par l'anti-bot d'Audible : réessaie dans quelques minutes.",
+      ),
+    )
+    const wrapper = mountForm()
+
+    await wrapper.findAll('.toggle button')[1].trigger('click')
+    await wrapper.find('.search-input input').setValue('https://www.audible.fr/pd/Book/B01M2WSG6T')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    expect(wrapper.find('.suggestions .empty').text()).toContain("l'anti-bot d'Audible")
+    expect(wrapper.find('.suggestions .empty button').text()).toBe('Réessaie')
   })
 
   it('exclut des suggestions les tags déjà en chips', async () => {
