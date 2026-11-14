@@ -191,6 +191,57 @@ describe('BookForm — champ tags à chips', () => {
     expect(wrapper.findAll('.tags-box .tag')[0].classes()).not.toContain('new')
   })
 
+  it('affiche « Recherche en cours » pendant une recherche sans vignettes', async () => {
+    let resolveSearch!: (books: Book[]) => void
+    mocks.search.mockImplementation(
+      () => new Promise((resolve) => { resolveSearch = resolve }),
+    )
+
+    const wrapper = mountForm()
+    await wrapper.find('.search-input input').setValue('hobb')
+    await flushPromises()
+
+    // Dès la frappe (et pendant le fetch) : jamais de « Aucun résultat » prématuré.
+    expect(wrapper.find('.suggestions .empty').text()).toContain('Recherche en cours')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+    expect(wrapper.find('.suggestions .empty').text()).toContain('Recherche en cours')
+
+    resolveSearch([audibleBook()])
+    await flushPromises()
+
+    // Résultats arrivés : vignettes affichées, message parti.
+    expect(wrapper.findAll('.suggestion')).toHaveLength(1)
+    expect(wrapper.find('.suggestions .empty').exists()).toBe(false)
+  })
+
+  it('laisse les vignettes affichées pendant la recherche suivante', async () => {
+    mocks.search.mockResolvedValue([audibleBook()])
+    const wrapper = mountForm()
+    await wrapper.find('.search-input input').setValue('hobb')
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+    expect(wrapper.findAll('.suggestion')).toHaveLength(1)
+
+    // Recherche suivante en vol : les vignettes restent, aucun message d'attente.
+    let resolveSearch!: (books: Book[]) => void
+    mocks.search.mockImplementation(
+      () => new Promise((resolve) => { resolveSearch = resolve }),
+    )
+    await wrapper.find('.search-input input').setValue('hobb fusse')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    expect(wrapper.findAll('.suggestion')).toHaveLength(1)
+    expect(wrapper.find('.suggestions .empty').exists()).toBe(false)
+
+    // Vraiment aucun résultat : le message reprend la main.
+    resolveSearch([])
+    await flushPromises()
+    expect(wrapper.find('.suggestions .empty').text()).toContain('Aucun résultat')
+  })
+
   it('exclut des suggestions les tags déjà en chips', async () => {
     const wrapper = mountForm([libraryBook(['Fantasy', 'Aventure'])])
     const input = tagInput(wrapper)

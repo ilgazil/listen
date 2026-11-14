@@ -296,6 +296,9 @@ function onSearchChange(): void {
   lastSearch = term.value
   clearTimeout(searchHandle)
   searchError.value = ''
+  // L'état « Recherche en cours » démarre à la frappe (pas après le debounce) :
+  // pendant l'attente, la zone vide n'affiche jamais « Aucun résultat ».
+  loading.value = true
   abortController.abort()
   abortController = new AbortController()
   searchHandle = setTimeout(async () => {
@@ -533,6 +536,10 @@ function reset(): void {
         {{ searchError }}
         <button type="button" class="neon" @click="retrySearch">Réessaie</button>
       </div>
+
+      <!-- Recherche en vol sans vignette affichée : pas de « Aucun résultat »
+           prématuré (si des vignettes sont là, elles restent — branche du haut). -->
+      <div v-else-if="loading && term" class="empty">Recherche en cours</div>
 
       <div v-else-if="term" class="empty">
         Aucun résultat trouvé pour
