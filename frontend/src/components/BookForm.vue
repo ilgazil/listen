@@ -577,7 +577,7 @@ function reset(): void {
 
       <div v-else-if="searchError" class="empty">
         {{ searchError }}
-        <button type="button" class="neon" @click="retrySearch">Réessaie</button>
+        <button type="button" class="neon" @click="retrySearch">Réessayer</button>
       </div>
 
       <!-- Recherche en vol sans vignette affichée : pas de « Aucun résultat »

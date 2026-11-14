@@ -296,7 +296,7 @@ describe('BookForm — champ tags à chips', () => {
     )
   })
 
-  it('affiche l erreur backend (anti-bot) avec le bouton Réessaie', async () => {
+  it('affiche l erreur backend (anti-bot) avec le bouton Réessayer', async () => {
     mocks.searchByUrl.mockRejectedValue(
       new ScrapError(
         "Le scrap de la fiche a été bloqué par l'anti-bot d'Audible : réessaie dans quelques minutes.",
@@ -310,7 +310,7 @@ describe('BookForm — champ tags à chips', () => {
     await flushPromises()
 
     expect(wrapper.find('.suggestions .empty').text()).toContain("l'anti-bot d'Audible")
-    expect(wrapper.find('.suggestions .empty button').text()).toBe('Réessaie')
+    expect(wrapper.find('.suggestions .empty button').text()).toBe('Réessayer')
   })
 
   it('exclut des suggestions les tags déjà en chips', async () => {
